@@ -1,0 +1,67 @@
+{
+  "_comment": "Hand-authored world bible for the flagship demo (spec §4.1.4). Canonical character and location descriptions plus pre-generated reference image IDs. The prompts agent injects these canonical_description strings into every relevant shot prompt; that injection is the consistency mechanism (spec §4.1.3). Each reference_image_id corresponds to an `image`-type node in example-packages/rainforest-90s.json. Shape matches schema.World (characters[], locations[]); the leading _comment field is ignored by Pydantic.",
+  "characters": [
+    {
+      "id": "char_naturalist",
+      "name": "The Naturalist",
+      "canonical_description": "A weathered field naturalist in their late 40s with warm brown skin and short grey-flecked black hair tucked under a sun-faded wide-brimmed canvas hat. Wears a rolled-sleeve khaki field shirt with a battered leather notebook in the breast pocket, olive trousers, and worn hiking boots. Calm, attentive expression; sun lines around the eyes. Rendered in flat 2D animation with warm earth tones and soft painterly shading.",
+      "reference_image_ids": ["ref_naturalist_01"]
+    },
+    {
+      "id": "char_jaguar",
+      "name": "The Jaguar",
+      "canonical_description": "A large adult jaguar with a deep golden-amber coat patterned in bold black rosettes, a broad heavy-jawed head, and pale green-gold eyes. Powerful low-slung gait, thick tail. Always depicted moving with deliberate silence. Flat 2D animation, warm earth tones, soft rim light catching the fur.",
+      "reference_image_ids": ["ref_jaguar_01"]
+    },
+    {
+      "id": "char_macaw",
+      "name": "The Scarlet Macaw",
+      "canonical_description": "A scarlet macaw with brilliant red body plumage, yellow-and-blue banded wings, a long tapering red tail, pale bare facial skin, and a heavy curved ivory-and-black beak. Bright, alert eye. Shown in flight or perched in pairs. Flat 2D animation with saturated but warm tones.",
+      "reference_image_ids": ["ref_macaw_01"]
+    },
+    {
+      "id": "char_tree_frog",
+      "name": "The Red-eyed Tree Frog",
+      "canonical_description": "A small red-eyed tree frog with a vivid leaf-green back, blue-and-yellow striped flanks, bright orange webbed feet, and large round red eyes with vertical pupils. Glossy, dewy skin. Usually clinging to a wet leaf. Flat 2D animation, warm earth tones with the frog as a jewel-like accent.",
+      "reference_image_ids": ["ref_frog_01"]
+    }
+  ],
+  "locations": [
+    {
+      "id": "loc_canopy",
+      "name": "Rainforest Canopy",
+      "canonical_description": "The dense upper canopy layer at dawn: a rolling sea of interlocking treetops, dappled golden light filtering through leaves, thin mist rising between the crowns. A weathered rope-and-plank canopy walkway threads between two emergent trunks. Flat 2D animation, warm earth tones, layered depth haze.",
+      "reference_image_ids": ["ref_canopy_01"]
+    },
+    {
+      "id": "loc_emergent",
+      "name": "Emergent Layer",
+      "canonical_description": "The emergent layer seen from above: a few giant kapok and brazil-nut trees towering above an endless green canopy that stretches to a hazy horizon, low clouds drifting between the crowns at sunrise. Vast and open. Flat 2D animation, warm earth tones, soft atmospheric perspective.",
+      "reference_image_ids": ["ref_emergent_01"]
+    },
+    {
+      "id": "loc_river",
+      "name": "Amazon River",
+      "canonical_description": "A wide, slow, café-au-lait-brown river winding through unbroken rainforest, mirror-still at dawn with mist on the surface and dense green walls of trees on both banks. A small clay riverbank lick is visible in places. Flat 2D animation, warm earth tones, soft reflections.",
+      "reference_image_ids": ["ref_river_01"]
+    },
+    {
+      "id": "loc_forest_floor",
+      "name": "Forest Floor",
+      "canonical_description": "The shadowed forest floor: thick leaf litter, buttress roots of huge trees, ferns and bromeliads, scattered shafts of light breaking through far above, a thin clear stream threading the leaves. Humid, dim, intimate. Flat 2D animation, deep warm earth tones with bright light shafts.",
+      "reference_image_ids": ["ref_floor_01"]
+    },
+    {
+      "id": "loc_understory",
+      "name": "Understory",
+      "canonical_description": "The crowded understory between floor and canopy: broad dark-green leaves, hanging lianas, slender saplings reaching for light, heavy humid air with floating particles caught in stray beams. Flat 2D animation, layered greens over warm earth tones.",
+      "reference_image_ids": ["ref_understory_01"]
+    },
+    {
+      "id": "loc_night",
+      "name": "Night Forest",
+      "canonical_description": "The rainforest after dark: black silhouettes of the canopy against a deep indigo, star-flecked sky, fireflies and faint bioluminescence glowing among the leaves, moonlight catching wet foliage. Flat 2D animation, cool moonlit tones over warm shadow.",
+      "reference_image_ids": ["ref_night_01"]
+    }
+  ]
+}

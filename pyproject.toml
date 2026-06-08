@@ -1,0 +1,15 @@
+# Python workspace root for the AI Film Pipeline.
+# Each service (repo root) and shared library (libs/) has its own pyproject.toml
+# and is installed independently inside its Docker image. This root file exists
+# for editable local development across all packages at once.
+[project]
+name = "ai-film-pipeline"
+version = "1.0.0"
+description = "Distributed AI Film Pipeline — multi-agent planning + distributed execution."
+requires-python = ">=3.11"
+
+[tool.afp.packages]
+# Shared libraries under libs/ (imported across services, not deployed standalone).
+shared = ["libs/schema", "libs/adapters", "libs/rate-limiter"]
+# Deployable services at the repo root.
+services = ["planning", "scheduler", "worker", "compositor", "harness", "frontend"]

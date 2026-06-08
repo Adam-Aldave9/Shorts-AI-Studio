@@ -1,0 +1,15 @@
+[project]
+name = "afp-schema"
+version = "1.0.0"
+description = "Pydantic models for the AI Film Pipeline production package (the contract between tiers)."
+requires-python = ">=3.11"
+dependencies = [
+    "pydantic>=2.6",
+]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["schema"]

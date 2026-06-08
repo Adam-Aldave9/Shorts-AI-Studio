@@ -1,0 +1,22 @@
+[project]
+name = "afp-worker"
+version = "1.0.0"
+description = "Worker service: Celery worker that dispatches DAG nodes to provider adapters."
+requires-python = ">=3.11"
+dependencies = [
+    "afp-schema",
+    "afp-adapters",
+    "afp-rate-limiter",
+    "celery>=5.3",
+    "redis>=5.0",
+    "httpx>=0.27",
+    "tenacity>=8.2",
+    "boto3>=1.34",
+]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["worker"]

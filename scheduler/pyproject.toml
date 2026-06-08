@@ -1,0 +1,22 @@
+[project]
+name = "afp-scheduler"
+version = "1.0.0"
+description = "Scheduler service: FastAPI surface for the frontend + async DAG-walker daemon."
+requires-python = ">=3.11"
+dependencies = [
+    "afp-schema",
+    "afp-rate-limiter",
+    "fastapi>=0.110",
+    "uvicorn[standard]>=0.29",
+    "sse-starlette>=2.0",
+    "celery>=5.3",
+    "redis>=5.0",
+    "psycopg[binary]>=3.1",
+]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["scheduler"]

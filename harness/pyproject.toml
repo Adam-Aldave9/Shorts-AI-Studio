@@ -1,0 +1,23 @@
+[project]
+name = "afp-harness"
+version = "1.0.0"
+description = "Benchmark harness: replays the flagship package at multiple worker counts in mock mode and emits a CSV."
+requires-python = ">=3.11"
+dependencies = [
+    "afp-schema",
+    "afp-adapters",
+    "afp-storage",
+    "typer>=0.12",
+    "docker>=7.0",
+    "pandas>=2.2",
+]
+
+[project.scripts]
+afp-harness = "harness.cli:app"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["harness"]

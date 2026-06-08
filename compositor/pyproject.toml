@@ -1,0 +1,20 @@
+[project]
+name = "afp-compositor"
+version = "1.0.0"
+description = "Compositor service: single-instance terminal DAG node that renders the final MP4 with FFmpeg."
+requires-python = ">=3.11"
+dependencies = [
+    "afp-schema",
+    "afp-storage",
+    "celery>=5.3",
+    "redis>=5.0",
+    "ffmpeg-python>=0.2",
+    "boto3>=1.34",
+]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["compositor"]

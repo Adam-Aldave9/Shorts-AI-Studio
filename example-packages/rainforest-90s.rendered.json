@@ -1,0 +1,1140 @@
+{
+  "schema_version": "1.0",
+  "project_id": "p_rainforest_90s",
+  "created_at": "2026-06-07T00:00:00Z",
+  "meta": {
+    "title": "The Amazon Rainforest",
+    "premise": "A 90-second animated explainer about the Amazon rainforest — its layered structure, its iconic wildlife, and why it matters to the planet.",
+    "target_duration_s": 90.0,
+    "aspect_ratio": "16:9",
+    "style": "flat 2D animation, warm earth tones, soft painterly textures",
+    "narration_voice_id": "elevenlabs_voice_rachel",
+    "budget_usd": 10.0
+  },
+  "world": {
+    "characters": [
+      {
+        "id": "char_naturalist",
+        "name": "The Naturalist",
+        "canonical_description": "A weathered field naturalist in their late 40s with warm brown skin and short grey-flecked black hair tucked under a sun-faded wide-brimmed canvas hat. Wears a rolled-sleeve khaki field shirt with a battered leather notebook in the breast pocket, olive trousers, and worn hiking boots. Calm, attentive expression; sun lines around the eyes. Rendered in flat 2D animation with warm earth tones and soft painterly shading.",
+        "reference_image_ids": [
+          "ref_naturalist_01"
+        ]
+      },
+      {
+        "id": "char_jaguar",
+        "name": "The Jaguar",
+        "canonical_description": "A large adult jaguar with a deep golden-amber coat patterned in bold black rosettes, a broad heavy-jawed head, and pale green-gold eyes. Powerful low-slung gait, thick tail. Always depicted moving with deliberate silence. Flat 2D animation, warm earth tones, soft rim light catching the fur.",
+        "reference_image_ids": [
+          "ref_jaguar_01"
+        ]
+      },
+      {
+        "id": "char_macaw",
+        "name": "The Scarlet Macaw",
+        "canonical_description": "A scarlet macaw with brilliant red body plumage, yellow-and-blue banded wings, a long tapering red tail, pale bare facial skin, and a heavy curved ivory-and-black beak. Bright, alert eye. Shown in flight or perched in pairs. Flat 2D animation with saturated but warm tones.",
+        "reference_image_ids": [
+          "ref_macaw_01"
+        ]
+      },
+      {
+        "id": "char_tree_frog",
+        "name": "The Red-eyed Tree Frog",
+        "canonical_description": "A small red-eyed tree frog with a vivid leaf-green back, blue-and-yellow striped flanks, bright orange webbed feet, and large round red eyes with vertical pupils. Glossy, dewy skin. Usually clinging to a wet leaf. Flat 2D animation, warm earth tones with the frog as a jewel-like accent.",
+        "reference_image_ids": [
+          "ref_frog_01"
+        ]
+      }
+    ],
+    "locations": [
+      {
+        "id": "loc_canopy",
+        "name": "Rainforest Canopy",
+        "canonical_description": "The dense upper canopy layer at dawn: a rolling sea of interlocking treetops, dappled golden light filtering through leaves, thin mist rising between the crowns. A weathered rope-and-plank canopy walkway threads between two emergent trunks. Flat 2D animation, warm earth tones, layered depth haze.",
+        "reference_image_ids": [
+          "ref_canopy_01"
+        ]
+      },
+      {
+        "id": "loc_emergent",
+        "name": "Emergent Layer",
+        "canonical_description": "The emergent layer seen from above: a few giant kapok and brazil-nut trees towering above an endless green canopy that stretches to a hazy horizon, low clouds drifting between the crowns at sunrise. Vast and open. Flat 2D animation, warm earth tones, soft atmospheric perspective.",
+        "reference_image_ids": [
+          "ref_emergent_01"
+        ]
+      },
+      {
+        "id": "loc_river",
+        "name": "Amazon River",
+        "canonical_description": "A wide, slow, café-au-lait-brown river winding through unbroken rainforest, mirror-still at dawn with mist on the surface and dense green walls of trees on both banks. A small clay riverbank lick is visible in places. Flat 2D animation, warm earth tones, soft reflections.",
+        "reference_image_ids": [
+          "ref_river_01"
+        ]
+      },
+      {
+        "id": "loc_forest_floor",
+        "name": "Forest Floor",
+        "canonical_description": "The shadowed forest floor: thick leaf litter, buttress roots of huge trees, ferns and bromeliads, scattered shafts of light breaking through far above, a thin clear stream threading the leaves. Humid, dim, intimate. Flat 2D animation, deep warm earth tones with bright light shafts.",
+        "reference_image_ids": [
+          "ref_floor_01"
+        ]
+      },
+      {
+        "id": "loc_understory",
+        "name": "Understory",
+        "canonical_description": "The crowded understory between floor and canopy: broad dark-green leaves, hanging lianas, slender saplings reaching for light, heavy humid air with floating particles caught in stray beams. Flat 2D animation, layered greens over warm earth tones.",
+        "reference_image_ids": [
+          "ref_understory_01"
+        ]
+      },
+      {
+        "id": "loc_night",
+        "name": "Night Forest",
+        "canonical_description": "The rainforest after dark: black silhouettes of the canopy against a deep indigo, star-flecked sky, fireflies and faint bioluminescence glowing among the leaves, moonlight catching wet foliage. Flat 2D animation, cool moonlit tones over warm shadow.",
+        "reference_image_ids": [
+          "ref_night_01"
+        ]
+      }
+    ]
+  },
+  "assets": [
+    {
+      "node_id": "ref_naturalist_01",
+      "type": "image",
+      "depends_on": [],
+      "provider_hint": "fal:flux-schnell",
+      "spec": {
+        "width": 1024,
+        "height": 576
+      },
+      "prompt": "Character reference sheet, flat 2D animation, warm earth tones: a weathered field naturalist in their late 40s, warm brown skin, short grey-flecked black hair under a sun-faded wide-brimmed canvas hat, rolled-sleeve khaki field shirt with a leather notebook in the breast pocket, olive trousers, worn boots; calm attentive expression, neutral pose, plain background.",
+      "text": null,
+      "reference_image_ids": [],
+      "estimated_cost_usd": 0.03,
+      "actual_cost_usd": 0.04,
+      "status": "succeeded",
+      "asset_url": "s3://film-assets/_mock/placeholder.png"
+    },
+    {
+      "node_id": "ref_jaguar_01",
+      "type": "image",
+      "depends_on": [],
+      "provider_hint": "fal:flux-schnell",
+      "spec": {
+        "width": 1024,
+        "height": 576
+      },
+      "prompt": "Character reference, flat 2D animation, warm earth tones: a large adult jaguar with a deep golden-amber coat in bold black rosettes, broad heavy-jawed head, pale green-gold eyes, thick tail; standing in profile, soft rim light on the fur, plain background.",
+      "text": null,
+      "reference_image_ids": [],
+      "estimated_cost_usd": 0.03,
+      "actual_cost_usd": 0.04,
+      "status": "succeeded",
+      "asset_url": "s3://film-assets/_mock/placeholder.png"
+    },
+    {
+      "node_id": "ref_macaw_01",
+      "type": "image",
+      "depends_on": [],
+      "provider_hint": "fal:flux-schnell",
+      "spec": {
+        "width": 1024,
+        "height": 576
+      },
+      "prompt": "Character reference, flat 2D animation, warm saturated tones: a scarlet macaw with brilliant red body, yellow-and-blue banded wings, long tapering red tail, pale bare facial skin, heavy curved ivory-and-black beak; perched in profile, wings slightly open, plain background.",
+      "text": null,
+      "reference_image_ids": [],
+      "estimated_cost_usd": 0.03,
+      "actual_cost_usd": 0.04,
+      "status": "succeeded",
+      "asset_url": "s3://film-assets/_mock/placeholder.png"
+    },
+    {
+      "node_id": "ref_frog_01",
+      "type": "image",
+      "depends_on": [],
+      "provider_hint": "fal:flux-schnell",
+      "spec": {
+        "width": 1024,
+        "height": 576
+      },
+      "prompt": "Character reference, flat 2D animation, jewel-like accent on warm tones: a small red-eyed tree frog with vivid leaf-green back, blue-and-yellow striped flanks, bright orange webbed feet, large round red eyes with vertical pupils, glossy dewy skin; clinging to a single wet leaf, plain background.",
+      "text": null,
+      "reference_image_ids": [],
+      "estimated_cost_usd": 0.03,
+      "actual_cost_usd": 0.04,
+      "status": "succeeded",
+      "asset_url": "s3://film-assets/_mock/placeholder.png"
+    },
+    {
+      "node_id": "ref_canopy_01",
+      "type": "image",
+      "depends_on": [],
+      "provider_hint": "fal:flux-schnell",
+      "spec": {
+        "width": 1024,
+        "height": 576
+      },
+      "prompt": "Establishing background, flat 2D animation, warm earth tones: the dense rainforest canopy at dawn, a rolling sea of interlocking treetops, dappled golden light through leaves, thin mist rising between crowns, a weathered rope-and-plank canopy walkway between two emergent trunks; layered depth haze.",
+      "text": null,
+      "reference_image_ids": [],
+      "estimated_cost_usd": 0.03,
+      "actual_cost_usd": 0.04,
+      "status": "succeeded",
+      "asset_url": "s3://film-assets/_mock/placeholder.png"
+    },
+    {
+      "node_id": "ref_emergent_01",
+      "type": "image",
+      "depends_on": [],
+      "provider_hint": "fal:flux-schnell",
+      "spec": {
+        "width": 1024,
+        "height": 576
+      },
+      "prompt": "Establishing background, flat 2D animation, warm earth tones: the emergent layer from above, a few giant kapok and brazil-nut trees towering over an endless green canopy to a hazy horizon, low clouds drifting between crowns at sunrise; soft atmospheric perspective.",
+      "text": null,
+      "reference_image_ids": [],
+      "estimated_cost_usd": 0.03,
+      "actual_cost_usd": 0.04,
+      "status": "succeeded",
+      "asset_url": "s3://film-assets/_mock/placeholder.png"
+    },
+    {
+      "node_id": "ref_river_01",
+      "type": "image",
+      "depends_on": [],
+      "provider_hint": "fal:flux-schnell",
+      "spec": {
+        "width": 1024,
+        "height": 576
+      },
+      "prompt": "Establishing background, flat 2D animation, warm earth tones: a wide slow café-au-lait brown river winding through unbroken rainforest, mirror-still at dawn with mist on the surface, dense green walls of trees on both banks, a clay riverbank lick; soft reflections.",
+      "text": null,
+      "reference_image_ids": [],
+      "estimated_cost_usd": 0.03,
+      "actual_cost_usd": 0.04,
+      "status": "succeeded",
+      "asset_url": "s3://film-assets/_mock/placeholder.png"
+    },
+    {
+      "node_id": "ref_floor_01",
+      "type": "image",
+      "depends_on": [],
+      "provider_hint": "fal:flux-schnell",
+      "spec": {
+        "width": 1024,
+        "height": 576
+      },
+      "prompt": "Establishing background, flat 2D animation, deep warm earth tones with bright light shafts: the shadowed forest floor, thick leaf litter, huge buttress roots, ferns and bromeliads, scattered shafts of light from far above, a thin clear stream threading the leaves; humid and intimate.",
+      "text": null,
+      "reference_image_ids": [],
+      "estimated_cost_usd": 0.03,
+      "actual_cost_usd": 0.04,
+      "status": "succeeded",
+      "asset_url": "s3://film-assets/_mock/placeholder.png"
+    },
+    {
+      "node_id": "ref_understory_01",
+      "type": "image",
+      "depends_on": [],
+      "provider_hint": "fal:flux-schnell",
+      "spec": {
+        "width": 1024,
+        "height": 576
+      },
+      "prompt": "Establishing background, flat 2D animation, layered greens over warm earth tones: the crowded understory, broad dark-green leaves, hanging lianas, slender saplings reaching for light, humid air with floating particles caught in stray beams.",
+      "text": null,
+      "reference_image_ids": [],
+      "estimated_cost_usd": 0.03,
+      "actual_cost_usd": 0.04,
+      "status": "succeeded",
+      "asset_url": "s3://film-assets/_mock/placeholder.png"
+    },
+    {
+      "node_id": "ref_night_01",
+      "type": "image",
+      "depends_on": [],
+      "provider_hint": "fal:flux-schnell",
+      "spec": {
+        "width": 1024,
+        "height": 576
+      },
+      "prompt": "Establishing background, flat 2D animation, cool moonlit tones over warm shadow: the rainforest after dark, black canopy silhouettes against a deep indigo star-flecked sky, fireflies and faint bioluminescence among the leaves, moonlight on wet foliage.",
+      "text": null,
+      "reference_image_ids": [],
+      "estimated_cost_usd": 0.03,
+      "actual_cost_usd": 0.04,
+      "status": "succeeded",
+      "asset_url": "s3://film-assets/_mock/placeholder.png"
+    },
+    {
+      "node_id": "shot_001",
+      "type": "video",
+      "depends_on": [
+        "ref_canopy_01"
+      ],
+      "provider_hint": "fal:pixverse-v6-i2v",
+      "spec": {
+        "duration_s": 3.0,
+        "aspect": "16:9"
+      },
+      "prompt": "Slow upward pan revealing the dense rainforest canopy as dawn mist lifts off the treetops; gentle drifting light.",
+      "text": null,
+      "reference_image_ids": [
+        "ref_canopy_01"
+      ],
+      "estimated_cost_usd": 0.1,
+      "actual_cost_usd": 0.1,
+      "status": "succeeded",
+      "asset_url": "s3://film-assets/_mock/placeholder.mp4"
+    },
+    {
+      "node_id": "shot_002",
+      "type": "video",
+      "depends_on": [
+        "ref_canopy_01",
+        "shot_001"
+      ],
+      "provider_hint": "fal:pixverse-v6-i2v",
+      "spec": {
+        "duration_s": 3.0,
+        "aspect": "16:9"
+      },
+      "prompt": "Camera continues rising above the canopy, golden morning light spilling across the rolling treetops; mist thinning.",
+      "text": null,
+      "reference_image_ids": [
+        "ref_canopy_01"
+      ],
+      "estimated_cost_usd": 0.1,
+      "actual_cost_usd": 0.1,
+      "status": "succeeded",
+      "asset_url": "s3://film-assets/_mock/placeholder.mp4"
+    },
+    {
+      "node_id": "shot_003",
+      "type": "video",
+      "depends_on": [
+        "ref_emergent_01"
+      ],
+      "provider_hint": "fal:pixverse-v6-i2v",
+      "spec": {
+        "duration_s": 3.0,
+        "aspect": "16:9"
+      },
+      "prompt": "Wide aerial of emergent giant trees towering above the canopy sea, low clouds drifting slowly between their crowns.",
+      "text": null,
+      "reference_image_ids": [
+        "ref_emergent_01"
+      ],
+      "estimated_cost_usd": 0.1,
+      "actual_cost_usd": 0.1,
+      "status": "succeeded",
+      "asset_url": "s3://film-assets/_mock/placeholder.mp4"
+    },
+    {
+      "node_id": "shot_004",
+      "type": "video",
+      "depends_on": [
+        "ref_canopy_01",
+        "ref_macaw_01"
+      ],
+      "provider_hint": "fal:pixverse-v6-i2v",
+      "spec": {
+        "duration_s": 3.0,
+        "aspect": "16:9"
+      },
+      "prompt": "A scarlet macaw bursts up from the canopy and glides across frame, wings catching the dawn light.",
+      "text": null,
+      "reference_image_ids": [
+        "ref_canopy_01",
+        "ref_macaw_01"
+      ],
+      "estimated_cost_usd": 0.1,
+      "actual_cost_usd": 0.1,
+      "status": "succeeded",
+      "asset_url": "s3://film-assets/_mock/placeholder.mp4"
+    },
+    {
+      "node_id": "shot_005",
+      "type": "video",
+      "depends_on": [
+        "ref_naturalist_01",
+        "ref_canopy_01"
+      ],
+      "provider_hint": "fal:pixverse-v6-i2v",
+      "spec": {
+        "duration_s": 3.0,
+        "aspect": "16:9"
+      },
+      "prompt": "The naturalist stands on the rope canopy walkway gazing out over the treetops, shirt stirring in the wind.",
+      "text": null,
+      "reference_image_ids": [
+        "ref_naturalist_01",
+        "ref_canopy_01"
+      ],
+      "estimated_cost_usd": 0.1,
+      "actual_cost_usd": 0.1,
+      "status": "succeeded",
+      "asset_url": "s3://film-assets/_mock/placeholder.mp4"
+    },
+    {
+      "node_id": "shot_006",
+      "type": "video",
+      "depends_on": [
+        "ref_river_01"
+      ],
+      "provider_hint": "fal:pixverse-v6-i2v",
+      "spec": {
+        "duration_s": 3.0,
+        "aspect": "16:9"
+      },
+      "prompt": "Sweeping aerial following the wide brown ribbon of the river winding through unbroken green forest.",
+      "text": null,
+      "reference_image_ids": [
+        "ref_river_01"
+      ],
+      "estimated_cost_usd": 0.1,
+      "actual_cost_usd": 0.1,
+      "status": "succeeded",
+      "asset_url": "s3://film-assets/_mock/placeholder.mp4"
+    },
+    {
+      "node_id": "shot_007",
+      "type": "video",
+      "depends_on": [
+        "ref_river_01",
+        "shot_006"
+      ],
+      "provider_hint": "fal:pixverse-v6-i2v",
+      "spec": {
+        "duration_s": 3.0,
+        "aspect": "16:9"
+      },
+      "prompt": "Camera descends smoothly toward the mirror-still water surface, mist drifting, faint reflections rippling.",
+      "text": null,
+      "reference_image_ids": [
+        "ref_river_01"
+      ],
+      "estimated_cost_usd": 0.1,
+      "actual_cost_usd": 0.1,
+      "status": "succeeded",
+      "asset_url": "s3://film-assets/_mock/placeholder.mp4"
+    },
+    {
+      "node_id": "shot_008",
+      "type": "video",
+      "depends_on": [
+        "ref_river_01",
+        "ref_naturalist_01"
+      ],
+      "provider_hint": "fal:pixverse-v6-i2v",
+      "spec": {
+        "duration_s": 3.0,
+        "aspect": "16:9"
+      },
+      "prompt": "The naturalist paddles a small wooden canoe along the calm river at dawn, slow ripples spreading behind.",
+      "text": null,
+      "reference_image_ids": [
+        "ref_river_01",
+        "ref_naturalist_01"
+      ],
+      "estimated_cost_usd": 0.1,
+      "actual_cost_usd": 0.1,
+      "status": "succeeded",
+      "asset_url": "s3://film-assets/_mock/placeholder.mp4"
+    },
+    {
+      "node_id": "shot_009",
+      "type": "video",
+      "depends_on": [
+        "ref_river_01"
+      ],
+      "provider_hint": "fal:pixverse-v6-i2v",
+      "spec": {
+        "duration_s": 3.0,
+        "aspect": "16:9"
+      },
+      "prompt": "Close on the water as a pink river dolphin breaks the surface in a gentle arc and slips back under.",
+      "text": null,
+      "reference_image_ids": [
+        "ref_river_01"
+      ],
+      "estimated_cost_usd": 0.1,
+      "actual_cost_usd": 0.1,
+      "status": "succeeded",
+      "asset_url": "s3://film-assets/_mock/placeholder.mp4"
+    },
+    {
+      "node_id": "shot_010",
+      "type": "video",
+      "depends_on": [
+        "ref_river_01",
+        "ref_macaw_01"
+      ],
+      "provider_hint": "fal:pixverse-v6-i2v",
+      "spec": {
+        "duration_s": 3.0,
+        "aspect": "16:9"
+      },
+      "prompt": "A pair of scarlet macaws fly low across the river toward a clay lick on the far bank.",
+      "text": null,
+      "reference_image_ids": [
+        "ref_river_01",
+        "ref_macaw_01"
+      ],
+      "estimated_cost_usd": 0.1,
+      "actual_cost_usd": 0.1,
+      "status": "succeeded",
+      "asset_url": "s3://film-assets/_mock/placeholder.mp4"
+    },
+    {
+      "node_id": "shot_011",
+      "type": "video",
+      "depends_on": [
+        "ref_floor_01"
+      ],
+      "provider_hint": "fal:pixverse-v6-i2v",
+      "spec": {
+        "duration_s": 3.0,
+        "aspect": "16:9"
+      },
+      "prompt": "Camera drifts downward through shafts of light to the leaf-littered forest floor among great buttress roots.",
+      "text": null,
+      "reference_image_ids": [
+        "ref_floor_01"
+      ],
+      "estimated_cost_usd": 0.1,
+      "actual_cost_usd": 0.1,
+      "status": "succeeded",
+      "asset_url": "s3://film-assets/_mock/placeholder.mp4"
+    },
+    {
+      "node_id": "shot_012",
+      "type": "video",
+      "depends_on": [
+        "ref_floor_01",
+        "shot_011"
+      ],
+      "provider_hint": "fal:pixverse-v6-i2v",
+      "spec": {
+        "duration_s": 3.0,
+        "aspect": "16:9"
+      },
+      "prompt": "Close tracking shot gliding over a column of leafcutter ants carrying bright green leaf fragments.",
+      "text": null,
+      "reference_image_ids": [
+        "ref_floor_01"
+      ],
+      "estimated_cost_usd": 0.1,
+      "actual_cost_usd": 0.1,
+      "status": "succeeded",
+      "asset_url": "s3://film-assets/_mock/placeholder.mp4"
+    },
+    {
+      "node_id": "shot_013",
+      "type": "video",
+      "depends_on": [
+        "ref_floor_01",
+        "ref_naturalist_01"
+      ],
+      "provider_hint": "fal:pixverse-v6-i2v",
+      "spec": {
+        "duration_s": 3.0,
+        "aspect": "16:9"
+      },
+      "prompt": "The naturalist crouches to examine a red bromeliad, gently brushing back a fern, eyes intent.",
+      "text": null,
+      "reference_image_ids": [
+        "ref_floor_01",
+        "ref_naturalist_01"
+      ],
+      "estimated_cost_usd": 0.1,
+      "actual_cost_usd": 0.1,
+      "status": "succeeded",
+      "asset_url": "s3://film-assets/_mock/placeholder.mp4"
+    },
+    {
+      "node_id": "shot_014",
+      "type": "video",
+      "depends_on": [
+        "ref_understory_01"
+      ],
+      "provider_hint": "fal:pixverse-v6-i2v",
+      "spec": {
+        "duration_s": 3.0,
+        "aspect": "16:9"
+      },
+      "prompt": "Slow push through dense understory foliage, broad leaves parting before the camera, dust motes in the beams.",
+      "text": null,
+      "reference_image_ids": [
+        "ref_understory_01"
+      ],
+      "estimated_cost_usd": 0.1,
+      "actual_cost_usd": 0.1,
+      "status": "succeeded",
+      "asset_url": "s3://film-assets/_mock/placeholder.mp4"
+    },
+    {
+      "node_id": "shot_015",
+      "type": "video",
+      "depends_on": [
+        "ref_understory_01",
+        "ref_frog_01"
+      ],
+      "provider_hint": "fal:pixverse-v6-i2v",
+      "spec": {
+        "duration_s": 3.0,
+        "aspect": "16:9"
+      },
+      "prompt": "Extreme close-up on a red-eyed tree frog clinging to a wet leaf, blinking slowly, dew sliding off.",
+      "text": null,
+      "reference_image_ids": [
+        "ref_understory_01",
+        "ref_frog_01"
+      ],
+      "estimated_cost_usd": 0.1,
+      "actual_cost_usd": 0.1,
+      "status": "succeeded",
+      "asset_url": "s3://film-assets/_mock/placeholder.mp4"
+    },
+    {
+      "node_id": "shot_016",
+      "type": "video",
+      "depends_on": [
+        "ref_understory_01",
+        "ref_jaguar_01"
+      ],
+      "provider_hint": "fal:pixverse-v6-i2v",
+      "spec": {
+        "duration_s": 3.0,
+        "aspect": "16:9"
+      },
+      "prompt": "A jaguar pads silently through the understory shadows, shoulder muscles rolling, eyes forward.",
+      "text": null,
+      "reference_image_ids": [
+        "ref_understory_01",
+        "ref_jaguar_01"
+      ],
+      "estimated_cost_usd": 0.1,
+      "actual_cost_usd": 0.1,
+      "status": "succeeded",
+      "asset_url": "s3://film-assets/_mock/placeholder.mp4"
+    },
+    {
+      "node_id": "shot_017",
+      "type": "video",
+      "depends_on": [
+        "ref_jaguar_01",
+        "shot_016"
+      ],
+      "provider_hint": "fal:pixverse-v6-i2v",
+      "spec": {
+        "duration_s": 3.0,
+        "aspect": "16:9"
+      },
+      "prompt": "The jaguar pauses and turns its head toward camera, pale eyes catching a shaft of light.",
+      "text": null,
+      "reference_image_ids": [
+        "ref_jaguar_01"
+      ],
+      "estimated_cost_usd": 0.1,
+      "actual_cost_usd": 0.1,
+      "status": "succeeded",
+      "asset_url": "s3://film-assets/_mock/placeholder.mp4"
+    },
+    {
+      "node_id": "shot_018",
+      "type": "video",
+      "depends_on": [
+        "ref_floor_01",
+        "ref_jaguar_01"
+      ],
+      "provider_hint": "fal:pixverse-v6-i2v",
+      "spec": {
+        "duration_s": 3.0,
+        "aspect": "16:9"
+      },
+      "prompt": "The jaguar lowers its head to drink from a thin forest stream, slow ripples spreading across the water.",
+      "text": null,
+      "reference_image_ids": [
+        "ref_floor_01",
+        "ref_jaguar_01"
+      ],
+      "estimated_cost_usd": 0.1,
+      "actual_cost_usd": 0.1,
+      "status": "succeeded",
+      "asset_url": "s3://film-assets/_mock/placeholder.mp4"
+    },
+    {
+      "node_id": "shot_019",
+      "type": "video",
+      "depends_on": [
+        "ref_canopy_01",
+        "ref_macaw_01"
+      ],
+      "provider_hint": "fal:pixverse-v6-i2v",
+      "spec": {
+        "duration_s": 3.0,
+        "aspect": "16:9"
+      },
+      "prompt": "A pair of scarlet macaws preen one another on a mossy branch high in the dappled canopy.",
+      "text": null,
+      "reference_image_ids": [
+        "ref_canopy_01",
+        "ref_macaw_01"
+      ],
+      "estimated_cost_usd": 0.1,
+      "actual_cost_usd": 0.1,
+      "status": "succeeded",
+      "asset_url": "s3://film-assets/_mock/placeholder.mp4"
+    },
+    {
+      "node_id": "shot_020",
+      "type": "video",
+      "depends_on": [
+        "ref_understory_01",
+        "ref_frog_01"
+      ],
+      "provider_hint": "fal:pixverse-v6-i2v",
+      "spec": {
+        "duration_s": 3.0,
+        "aspect": "16:9"
+      },
+      "prompt": "The red-eyed tree frog leaps between two leaves in graceful slow motion, droplets scattering.",
+      "text": null,
+      "reference_image_ids": [
+        "ref_understory_01",
+        "ref_frog_01"
+      ],
+      "estimated_cost_usd": 0.1,
+      "actual_cost_usd": 0.1,
+      "status": "succeeded",
+      "asset_url": "s3://film-assets/_mock/placeholder.mp4"
+    },
+    {
+      "node_id": "shot_021",
+      "type": "video",
+      "depends_on": [
+        "ref_floor_01"
+      ],
+      "provider_hint": "fal:pixverse-v6-i2v",
+      "spec": {
+        "duration_s": 3.0,
+        "aspect": "16:9"
+      },
+      "prompt": "Slow reveal of a cluster of fungi and mushrooms on a fallen log as the light shifts across them.",
+      "text": null,
+      "reference_image_ids": [
+        "ref_floor_01"
+      ],
+      "estimated_cost_usd": 0.1,
+      "actual_cost_usd": 0.1,
+      "status": "succeeded",
+      "asset_url": "s3://film-assets/_mock/placeholder.mp4"
+    },
+    {
+      "node_id": "shot_022",
+      "type": "video",
+      "depends_on": [
+        "ref_night_01"
+      ],
+      "provider_hint": "fal:pixverse-v6-i2v",
+      "spec": {
+        "duration_s": 3.0,
+        "aspect": "16:9"
+      },
+      "prompt": "Dusk settles; the canopy silhouettes darken against a deep orange-to-indigo sky.",
+      "text": null,
+      "reference_image_ids": [
+        "ref_night_01"
+      ],
+      "estimated_cost_usd": 0.1,
+      "actual_cost_usd": 0.1,
+      "status": "succeeded",
+      "asset_url": "s3://film-assets/_mock/placeholder.mp4"
+    },
+    {
+      "node_id": "shot_023",
+      "type": "video",
+      "depends_on": [
+        "ref_night_01",
+        "shot_022"
+      ],
+      "provider_hint": "fal:pixverse-v6-i2v",
+      "spec": {
+        "duration_s": 3.0,
+        "aspect": "16:9"
+      },
+      "prompt": "Stars emerge above the black treeline and fireflies begin to blink in the dark understory.",
+      "text": null,
+      "reference_image_ids": [
+        "ref_night_01"
+      ],
+      "estimated_cost_usd": 0.1,
+      "actual_cost_usd": 0.1,
+      "status": "succeeded",
+      "asset_url": "s3://film-assets/_mock/placeholder.mp4"
+    },
+    {
+      "node_id": "shot_024",
+      "type": "video",
+      "depends_on": [
+        "ref_night_01",
+        "ref_frog_01"
+      ],
+      "provider_hint": "fal:pixverse-v6-i2v",
+      "spec": {
+        "duration_s": 3.0,
+        "aspect": "16:9"
+      },
+      "prompt": "The tree frog lit by cool moonlight on a glistening leaf, red eyes glowing faintly in the dark.",
+      "text": null,
+      "reference_image_ids": [
+        "ref_night_01",
+        "ref_frog_01"
+      ],
+      "estimated_cost_usd": 0.1,
+      "actual_cost_usd": 0.1,
+      "status": "succeeded",
+      "asset_url": "s3://film-assets/_mock/placeholder.mp4"
+    },
+    {
+      "node_id": "shot_025",
+      "type": "video",
+      "depends_on": [
+        "ref_night_01",
+        "ref_jaguar_01"
+      ],
+      "provider_hint": "fal:pixverse-v6-i2v",
+      "spec": {
+        "duration_s": 3.0,
+        "aspect": "16:9"
+      },
+      "prompt": "The jaguar's eyes reflect green in the darkness as it moves slowly through the night forest.",
+      "text": null,
+      "reference_image_ids": [
+        "ref_night_01",
+        "ref_jaguar_01"
+      ],
+      "estimated_cost_usd": 0.1,
+      "actual_cost_usd": 0.1,
+      "status": "succeeded",
+      "asset_url": "s3://film-assets/_mock/placeholder.mp4"
+    },
+    {
+      "node_id": "shot_026",
+      "type": "video",
+      "depends_on": [
+        "ref_river_01",
+        "ref_night_01"
+      ],
+      "provider_hint": "fal:pixverse-v6-i2v",
+      "spec": {
+        "duration_s": 3.0,
+        "aspect": "16:9"
+      },
+      "prompt": "The moonlit river under a starry sky, mist on the black water, distant night calls echoing.",
+      "text": null,
+      "reference_image_ids": [
+        "ref_river_01",
+        "ref_night_01"
+      ],
+      "estimated_cost_usd": 0.1,
+      "actual_cost_usd": 0.1,
+      "status": "succeeded",
+      "asset_url": "s3://film-assets/_mock/placeholder.mp4"
+    },
+    {
+      "node_id": "shot_027",
+      "type": "video",
+      "depends_on": [
+        "ref_emergent_01"
+      ],
+      "provider_hint": "fal:pixverse-v6-i2v",
+      "spec": {
+        "duration_s": 3.0,
+        "aspect": "16:9"
+      },
+      "prompt": "Dawn returns over the emergent layer, fog rising off the vast canopy as the forest seems to breathe.",
+      "text": null,
+      "reference_image_ids": [
+        "ref_emergent_01"
+      ],
+      "estimated_cost_usd": 0.1,
+      "actual_cost_usd": 0.1,
+      "status": "succeeded",
+      "asset_url": "s3://film-assets/_mock/placeholder.mp4"
+    },
+    {
+      "node_id": "shot_028",
+      "type": "video",
+      "depends_on": [
+        "ref_canopy_01",
+        "ref_naturalist_01"
+      ],
+      "provider_hint": "fal:pixverse-v6-i2v",
+      "spec": {
+        "duration_s": 3.0,
+        "aspect": "16:9"
+      },
+      "prompt": "The naturalist on the canopy walkway turns to look directly at camera, speaking calmly to the viewer.",
+      "text": null,
+      "reference_image_ids": [
+        "ref_canopy_01",
+        "ref_naturalist_01"
+      ],
+      "estimated_cost_usd": 0.1,
+      "actual_cost_usd": 0.1,
+      "status": "succeeded",
+      "asset_url": "s3://film-assets/_mock/placeholder.mp4"
+    },
+    {
+      "node_id": "shot_029",
+      "type": "video",
+      "depends_on": [
+        "ref_emergent_01",
+        "shot_027"
+      ],
+      "provider_hint": "fal:pixverse-v6-i2v",
+      "spec": {
+        "duration_s": 3.0,
+        "aspect": "16:9"
+      },
+      "prompt": "Camera pulls back high above the endless canopy stretching unbroken to the hazy horizon.",
+      "text": null,
+      "reference_image_ids": [
+        "ref_emergent_01"
+      ],
+      "estimated_cost_usd": 0.1,
+      "actual_cost_usd": 0.1,
+      "status": "succeeded",
+      "asset_url": "s3://film-assets/_mock/placeholder.mp4"
+    },
+    {
+      "node_id": "shot_030",
+      "type": "video",
+      "depends_on": [
+        "ref_canopy_01"
+      ],
+      "provider_hint": "fal:pixverse-v6-i2v",
+      "spec": {
+        "duration_s": 3.0,
+        "aspect": "16:9"
+      },
+      "prompt": "Final slow push into the glowing dawn canopy at golden hour, light blooming through the leaves.",
+      "text": null,
+      "reference_image_ids": [
+        "ref_canopy_01"
+      ],
+      "estimated_cost_usd": 0.1,
+      "actual_cost_usd": 0.1,
+      "status": "succeeded",
+      "asset_url": "s3://film-assets/_mock/placeholder.mp4"
+    },
+    {
+      "node_id": "narration_full",
+      "type": "voiceover",
+      "depends_on": [],
+      "provider_hint": "elevenlabs:multilingual-v3",
+      "spec": {
+        "voice_id": "elevenlabs_voice_rachel"
+      },
+      "prompt": null,
+      "text": "The Amazon rainforest covers more than five million square kilometers, a single forest large enough to swallow whole nations. From above, it looks like a calm green ocean. But inside, it is the most crowded place on Earth. A brown river threads through it for thousands of miles, feeding the trees and everything that depends on them. Here, life is stacked in layers. Macaws and monkeys rule the sunlit canopy. Below, in the dim understory, jaguars move unseen and tiny frogs guard a single leaf. On the shadowed floor, armies of ants and quiet fungi turn death back into soil. When night falls, the forest does not sleep; it simply changes shift. One in ten known species on the planet lives here, and the forest itself helps cool the world and steady its rains. It took millions of years to grow this rich. Keeping it is now up to us.",
+      "reference_image_ids": [],
+      "estimated_cost_usd": 0.4,
+      "actual_cost_usd": 0.4,
+      "status": "succeeded",
+      "asset_url": "s3://film-assets/_mock/placeholder.mp3"
+    }
+  ],
+  "timeline": [
+    {
+      "node_id": "shot_001",
+      "in_s": 0.0,
+      "out_s": 3.0,
+      "audio_track": null
+    },
+    {
+      "node_id": "shot_002",
+      "in_s": 3.0,
+      "out_s": 6.0,
+      "audio_track": null
+    },
+    {
+      "node_id": "shot_003",
+      "in_s": 6.0,
+      "out_s": 9.0,
+      "audio_track": null
+    },
+    {
+      "node_id": "shot_004",
+      "in_s": 9.0,
+      "out_s": 12.0,
+      "audio_track": null
+    },
+    {
+      "node_id": "shot_005",
+      "in_s": 12.0,
+      "out_s": 15.0,
+      "audio_track": null
+    },
+    {
+      "node_id": "shot_006",
+      "in_s": 15.0,
+      "out_s": 18.0,
+      "audio_track": null
+    },
+    {
+      "node_id": "shot_007",
+      "in_s": 18.0,
+      "out_s": 21.0,
+      "audio_track": null
+    },
+    {
+      "node_id": "shot_008",
+      "in_s": 21.0,
+      "out_s": 24.0,
+      "audio_track": null
+    },
+    {
+      "node_id": "shot_009",
+      "in_s": 24.0,
+      "out_s": 27.0,
+      "audio_track": null
+    },
+    {
+      "node_id": "shot_010",
+      "in_s": 27.0,
+      "out_s": 30.0,
+      "audio_track": null
+    },
+    {
+      "node_id": "shot_011",
+      "in_s": 30.0,
+      "out_s": 33.0,
+      "audio_track": null
+    },
+    {
+      "node_id": "shot_012",
+      "in_s": 33.0,
+      "out_s": 36.0,
+      "audio_track": null
+    },
+    {
+      "node_id": "shot_013",
+      "in_s": 36.0,
+      "out_s": 39.0,
+      "audio_track": null
+    },
+    {
+      "node_id": "shot_014",
+      "in_s": 39.0,
+      "out_s": 42.0,
+      "audio_track": null
+    },
+    {
+      "node_id": "shot_015",
+      "in_s": 42.0,
+      "out_s": 45.0,
+      "audio_track": null
+    },
+    {
+      "node_id": "shot_016",
+      "in_s": 45.0,
+      "out_s": 48.0,
+      "audio_track": null
+    },
+    {
+      "node_id": "shot_017",
+      "in_s": 48.0,
+      "out_s": 51.0,
+      "audio_track": null
+    },
+    {
+      "node_id": "shot_018",
+      "in_s": 51.0,
+      "out_s": 54.0,
+      "audio_track": null
+    },
+    {
+      "node_id": "shot_019",
+      "in_s": 54.0,
+      "out_s": 57.0,
+      "audio_track": null
+    },
+    {
+      "node_id": "shot_020",
+      "in_s": 57.0,
+      "out_s": 60.0,
+      "audio_track": null
+    },
+    {
+      "node_id": "shot_021",
+      "in_s": 60.0,
+      "out_s": 63.0,
+      "audio_track": null
+    },
+    {
+      "node_id": "shot_022",
+      "in_s": 63.0,
+      "out_s": 66.0,
+      "audio_track": null
+    },
+    {
+      "node_id": "shot_023",
+      "in_s": 66.0,
+      "out_s": 69.0,
+      "audio_track": null
+    },
+    {
+      "node_id": "shot_024",
+      "in_s": 69.0,
+      "out_s": 72.0,
+      "audio_track": null
+    },
+    {
+      "node_id": "shot_025",
+      "in_s": 72.0,
+      "out_s": 75.0,
+      "audio_track": null
+    },
+    {
+      "node_id": "shot_026",
+      "in_s": 75.0,
+      "out_s": 78.0,
+      "audio_track": null
+    },
+    {
+      "node_id": "shot_027",
+      "in_s": 78.0,
+      "out_s": 81.0,
+      "audio_track": null
+    },
+    {
+      "node_id": "shot_028",
+      "in_s": 81.0,
+      "out_s": 84.0,
+      "audio_track": null
+    },
+    {
+      "node_id": "shot_029",
+      "in_s": 84.0,
+      "out_s": 87.0,
+      "audio_track": null
+    },
+    {
+      "node_id": "shot_030",
+      "in_s": 87.0,
+      "out_s": 90.0,
+      "audio_track": null
+    },
+    {
+      "node_id": "narration_full",
+      "in_s": 0.0,
+      "out_s": 90.0,
+      "audio_track": 1
+    }
+  ]
+}
