@@ -7,6 +7,7 @@ dependencies = [
     "afp-schema",
     "afp-adapters",
     "afp-storage",
+    "afp-worker",
     "typer>=0.12",
     "docker>=7.0",
     "pandas>=2.2",

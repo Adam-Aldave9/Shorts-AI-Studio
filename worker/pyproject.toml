@@ -7,6 +7,8 @@ dependencies = [
     "afp-schema",
     "afp-adapters",
     "afp-rate-limiter",
+    "afp-storage",
+    "afp-state",
     "celery>=5.3",
     "redis>=5.0",
     "httpx>=0.27",
