@@ -19,7 +19,6 @@ import shutil
 import subprocess
 import tempfile
 from pathlib import Path
-from urllib.parse import urlparse
 
 import typer
 
@@ -60,65 +59,39 @@ def _topo_order(pkg) -> list:
     return [by_id[n] for n in order]
 
 
+# The payload/extension/archival logic is the load-bearing per-node code shared
+# with the Phase 2 worker; it lives in ``worker.render`` so there's one source of
+# truth. These thin shims keep the driver's call sites (and its tests) stable while
+# delegating the real work. Imported lazily, matching this file's idiom.
 def _ext_for(kind: str, url: str) -> str:
-    """Pick a file extension from the result URL, falling back per asset type."""
-    suffix = Path(urlparse(url).path).suffix.lower()
-    if suffix in {".png", ".jpg", ".jpeg", ".webp", ".mp4", ".webm", ".mov", ".mp3", ".wav", ".m4a"}:
-        return suffix
-    return {"image": ".png", "video": ".mp4", "voiceover": ".mp3"}[kind]
+    from worker.render import ext_for
+
+    return ext_for(kind, url)
 
 
 def _build_payload(asset, pkg, provider_urls: dict[str, str]) -> dict:
-    """Uniform payload understood by both the real adapters and the mock adapter.
+    from worker.render import build_payload
 
-    ``asset_type`` drives the mock; the real adapters read the type-specific fields.
-    For i2v we feed the **upstream provider URL** of the reference image (fal fetches
-    ``image_url`` over the public internet), not the MinIO copy.
-    """
-    kind = asset.type.value
-    payload: dict = {"asset_type": kind}
-    if kind == "image":
-        payload.update(prompt=asset.prompt or "", width=asset.spec.get("width"), height=asset.spec.get("height"))
-    elif kind == "video":
-        image_url = next(
-            (provider_urls[r] for r in asset.reference_image_ids if r in provider_urls), None
-        )
-        payload.update(prompt=asset.prompt or "", duration=asset.spec.get("duration_s"), image_url=image_url)
-    elif kind == "voiceover":
-        payload.update(text=asset.text or "", voice_id=asset.spec.get("voice_id") or pkg.meta.narration_voice_id)
-    return payload
+    return build_payload(asset, pkg.meta, provider_urls)
 
 
 async def _run_node(asset, pkg, store, provider_urls: dict[str, str]) -> float:
     """Generate one node, archive it to MinIO, and record its result on the asset."""
     from adapters import get_adapter
     from schema import NodeStatus
+    from worker.render import archive_result, build_payload
 
     hint = asset.provider_hint or ""
     model = hint.split(":", 1)[1] if ":" in hint else ""
     adapter = get_adapter(hint)
 
-    handle = await adapter.submit(model, _build_payload(asset, pkg, provider_urls))
+    handle = await adapter.submit(model, build_payload(asset, pkg.meta, provider_urls))
     result = await adapter.poll(handle)
     while not result.done:
         await asyncio.sleep(_POLL_INTERVAL_S)
         result = await adapter.poll(handle)
 
-    pid = pkg.project_id
-    if result.content is not None:
-        # Inline bytes (ElevenLabs): the driver owns archival.
-        minio_url = store.put_bytes(f"{pid}/{asset.node_id}.mp3", result.content, "audio/mpeg")
-        provider_url = minio_url
-    elif result.asset_url.startswith("s3://"):
-        # Mock placeholder already lives in object storage — pass through.
-        minio_url = provider_url = result.asset_url
-    else:
-        # Real provider http(s) URL: copy into MinIO, but keep the provider URL for
-        # any downstream i2v node that needs a public reference image.
-        ext = _ext_for(asset.type.value, result.asset_url)
-        minio_url = store.put_from_url(f"{pid}/{asset.node_id}{ext}", result.asset_url)
-        provider_url = result.asset_url
-
+    minio_url, provider_url = archive_result(result, store, pkg.project_id, asset.node_id, asset.type.value)
     provider_urls[asset.node_id] = provider_url
     asset.asset_url = minio_url
     asset.status = NodeStatus.SUCCEEDED

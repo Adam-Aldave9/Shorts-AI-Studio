@@ -1,0 +1,16 @@
+[project]
+name = "afp-state"
+version = "1.0.0"
+description = "Shared Redis-backed run-state for the AI Film Pipeline (the seam read/written by the scheduler daemon, worker, and compositor)."
+requires-python = ">=3.11"
+dependencies = [
+    "afp-schema",
+    "redis>=5.0",
+]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["state"]

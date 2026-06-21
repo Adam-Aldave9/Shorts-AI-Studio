@@ -5,6 +5,7 @@ description = "Scheduler service: FastAPI surface for the frontend + async DAG-w
 requires-python = ">=3.11"
 dependencies = [
     "afp-schema",
+    "afp-state",
     "afp-rate-limiter",
     "fastapi>=0.110",
     "uvicorn[standard]>=0.29",
