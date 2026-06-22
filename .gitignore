@@ -17,6 +17,7 @@ dist/
 node_modules/
 frontend/dist/
 frontend/src/api/*.d.ts
+*.tsbuildinfo
 
 # Data / artifacts
 *.csv
