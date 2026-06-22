@@ -57,11 +57,14 @@ services:
       dockerfile: planning/Dockerfile
     environment:
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      REDIS_URL: redis://redis:6379/0
       POSTGRES_URL: postgresql://afp:afp@postgres:5432/afp
       MOCK: ${MOCK:-false}
     ports:
       - "8000:8000"
     depends_on:
+      redis:
+        condition: service_healthy
       postgres:
         condition: service_healthy
 
