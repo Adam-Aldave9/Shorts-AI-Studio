@@ -1,0 +1,15 @@
+[project]
+name = "afp-validator"
+version = "1.0.0"
+description = "Deterministic schema / continuity validator for the AI Film Pipeline (the shared gate run by planning and the scheduler's checkpoint PUT)."
+requires-python = ">=3.11"
+dependencies = [
+    "afp-schema",
+]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["validator"]
