@@ -5,7 +5,7 @@
 
 v1 stub: the agents return hand-shaped placeholder output so the rest of the
 pipeline (checkpoint, scheduler, workers) can be exercised before the LLM chain
-is wired in Week 3.
+is wired in.
 """
 
 from __future__ import annotations
@@ -25,7 +25,7 @@ from schema import (
 async def run_planning(brief: dict) -> ProductionPackage:
     """Run the agent chain and return an (unvalidated) production package.
 
-    TODO(week3): replace this with a real LangGraph StateGraph whose nodes are the
+    TODO: replace this with a real LangGraph StateGraph whose nodes are the
     script, breakdown, and prompts agents, with the hand-authored world bible
     injected before the prompts node.
     """

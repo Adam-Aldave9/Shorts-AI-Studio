@@ -5,9 +5,9 @@ one FFmpeg filtergraph that scales/pads each clip to the target resolution, trim
 it to its timeline slot, concatenates the clips in order, lays the narration over
 the top, and encodes a single H.264/AAC MP4 back to object storage.
 
-Phase 1 keeps it deliberately plain: no LUT/color grade (spec §8 allows a single
+It is deliberately plain: no LUT/color grade (spec §8 allows a single
 LUT later), one narration track. The Celery task in ``tasks.py`` is a thin wrapper
-over this; the Phase 1 driver calls it directly.
+over this; the sequential driver calls it directly.
 """
 
 from __future__ import annotations

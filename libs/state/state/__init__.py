@@ -12,6 +12,7 @@ from state.store import (
     PHASE_EXECUTING,
     PHASE_PAUSED,
     approve_package,
+    get_cost,
     get_dep_provider_urls,
     get_final_url,
     get_node,
@@ -45,4 +46,5 @@ __all__ = [
     "set_project_phase",
     "set_final_url",
     "get_final_url",
+    "get_cost",
 ]

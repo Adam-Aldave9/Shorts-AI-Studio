@@ -11,9 +11,10 @@ RUN apt-get update \
 
 COPY libs/schema /app/libs/schema
 COPY libs/storage /app/libs/storage
+COPY libs/state /app/libs/state
 COPY compositor /app/compositor
 
-RUN pip install ./libs/schema ./libs/storage ./compositor
+RUN pip install ./libs/schema ./libs/storage ./libs/state ./compositor
 
 # Single instance (concurrency 1): the terminal node of the DAG.
 CMD ["celery", "-A", "compositor.celery_app", "worker", "--loglevel=info", "--queues=composite", "--concurrency=1"]

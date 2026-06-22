@@ -1,6 +1,6 @@
 import { Link, Outlet } from "react-router-dom";
 
-// Shell for the internal tool (spec §9). shadcn/ui to be layered in during Week 3.
+// Shell for the internal tool (spec §9). shadcn/ui to be layered in later.
 export default function App() {
   return (
     <div className="min-h-screen bg-neutral-50 text-neutral-900">

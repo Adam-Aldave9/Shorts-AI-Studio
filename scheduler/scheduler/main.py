@@ -19,10 +19,26 @@ from sse_starlette.sse import EventSourceResponse
 
 from scheduler.daemon import run_daemon
 from scheduler.dag import Dag
-from scheduler.state import approve_package, get_package, save_package
+from scheduler.state import (
+    PHASE_BLOCKED,
+    PHASE_COMPLETE,
+    PHASE_PAUSED,
+    approve_package,
+    get_cost,
+    get_final_url,
+    get_node,
+    get_package,
+    get_project_phase,
+    save_package,
+)
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s")
 app = FastAPI(title="AI Film Pipeline — Scheduler Service", version="1.0.0")
+
+# Phases from which the run makes no further autonomous progress, so the SSE stream
+# can close: ``complete`` (final cut ready), or ``blocked``/``paused`` (awaiting a
+# human edit + re-run, spec §10.2). The client reconnects when the run resumes.
+_TERMINAL_PHASES = {PHASE_COMPLETE, PHASE_BLOCKED, PHASE_PAUSED}
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -54,6 +70,20 @@ def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
+@app.post("/packages", status_code=201)
+async def create_package(package: ProductionPackage) -> dict[str, str]:
+    """Ingest a full production package — the execution entry point.
+
+    The package is already authored/validated upstream (the sequential driver, the
+    ``harness submit`` test entry, or the planning tier handing off the
+    same way), so this does not re-run the validator; checkpoint edits via ``PUT``
+    do. Persisting it makes it visible to the daemon once ``/approve`` adds it to the
+    approved set.
+    """
+    await save_package(package)
+    return {"project_id": package.project_id}
+
+
 @app.get("/packages/{project_id}", response_model=ProductionPackage)
 async def read_package(project_id: str) -> ProductionPackage:
     package = await get_package(project_id)
@@ -81,23 +111,50 @@ async def approve(project_id: str) -> dict[str, str]:
     return {"status": "approved"}
 
 
+async def _status_event(project_id: str) -> dict | None:
+    """Build one SSE status frame from live shared state — the run's observability
+    surface (spec §9.2, §12.4): per-node status/attempts/error, project phase,
+    cost-to-date, the critical-path floor, and the final cut URL once it exists.
+    Returns ``None`` while the package is unknown (not yet ingested)."""
+    package = await get_package(project_id)
+    if not package:
+        return None
+    dag = Dag(package)
+    nodes: dict[str, dict] = {}
+    for asset in package.assets:
+        live = await get_node(project_id, asset.node_id)
+        nodes[asset.node_id] = {
+            "status": asset.status.value,
+            "attempts": int(live.get("attempts", 0)),
+            "error": live.get("error"),
+        }
+    phase = await get_project_phase(project_id)
+    return {
+        "project_id": project_id,
+        "phase": phase,
+        "cost_usd": await get_cost(project_id),
+        "nodes": nodes,
+        "critical_path_s": dag.critical_path_estimate(),
+        "final_url": await get_final_url(project_id),
+        "complete": phase == PHASE_COMPLETE,
+    }
+
+
 @app.get("/packages/{project_id}/events")
 async def events(project_id: str) -> EventSourceResponse:
-    """SSE stream of live node status for the Status screen (spec §9.2)."""
+    """SSE stream of live run state for the Status screen (spec §9.2).
+
+    Streams through ``executing`` and ``compositing`` and only closes once the run
+    reaches a terminal phase — crucially *after* the compositor sets ``final_url``,
+    so the last frame carries the final cut (the old ``is_complete`` break closed the
+    stream the instant all nodes succeeded, before compositing finished)."""
 
     async def gen():
         while True:
-            package = await get_package(project_id)
-            if package:
-                dag = Dag(package)
-                payload = {
-                    "project_id": project_id,
-                    "nodes": {a.node_id: a.status.value for a in package.assets},
-                    "critical_path_s": dag.critical_path_estimate(),
-                    "complete": dag.is_complete(),
-                }
+            payload = await _status_event(project_id)
+            if payload is not None:
                 yield {"event": "status", "data": json.dumps(payload)}
-                if dag.is_complete():
+                if payload["phase"] in _TERMINAL_PHASES:
                     break
             await asyncio.sleep(1.0)
 

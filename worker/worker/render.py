@@ -2,7 +2,7 @@
 
 This is the canonical per-node implementation: build the provider payload, acquire
 a rate-limit token, submit/poll the adapter, archive the result to object storage,
-record cost, and write live state. It is the same load-bearing logic the Phase 1
+record cost, and write live state. It is the same load-bearing logic the
 sequential driver ran (``harness/cli.py``), lifted here so the driver and the
 Celery worker share one source of truth. The thin Celery wrapper in ``tasks.py``
 adds retries, dead-lettering, and ``asyncio.run``.
@@ -68,7 +68,7 @@ def ext_for(kind: str, url: str) -> str:
 def archive_result(result, store: Storage, project_id: str, node_id: str, kind: str) -> tuple[str, str]:
     """Archive a node result to MinIO; return ``(asset_url, provider_url)``.
 
-    Three cases (ported verbatim from the Phase 1 driver):
+    Three cases (ported verbatim from the sequential driver):
       * inline ``content`` bytes (ElevenLabs) -> ``put_bytes``;
       * an ``s3://`` URL (mock placeholder already in storage) -> pass through;
       * an http(s) provider URL -> copy into MinIO, but keep the provider URL so a

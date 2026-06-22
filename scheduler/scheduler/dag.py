@@ -33,6 +33,24 @@ class Dag:
         terminal = {NodeStatus.SUCCEEDED, NodeStatus.FAILED, NodeStatus.DEAD_LETTERED}
         return all(a.status in terminal for a in self._assets.values())
 
+    def all_succeeded(self) -> bool:
+        """Every node succeeded — the only state from which the compositor may run."""
+        return all(a.status is NodeStatus.SUCCEEDED for a in self._assets.values())
+
+    def is_blocked(self) -> bool:
+        """The run can make no further progress yet isn't done: nothing is ready,
+        nothing is in flight, and not everything succeeded — so a ``failed`` or
+        ``dead-lettered`` node has orphaned its dependents (spec §10.2). The user
+        must edit + re-run the failed nodes to recover.
+        """
+        if self.all_succeeded():
+            return False
+        if self.ready_nodes():
+            return False
+        return not any(
+            a.status is NodeStatus.DISPATCHED for a in self._assets.values()
+        )
+
     def critical_path_estimate(self) -> float:
         """Longest dependency chain by estimated duration — the theoretical floor.
 
