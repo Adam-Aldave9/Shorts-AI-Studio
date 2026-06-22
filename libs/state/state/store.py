@@ -1,8 +1,8 @@
 """Shared run-state over Redis (spec §6.7).
 
-Phase 2 makes three isolated processes — the DAG-walker daemon, the worker fleet,
-and the compositor — read and write one shared view of a run. This module is that
-seam, mirroring the Phase 1 extraction of ``libs/storage``: an async API backed by
+Three isolated processes — the DAG-walker daemon, the worker fleet, and the
+compositor — read and write one shared view of a run. This module is that
+seam, mirroring the extraction of ``libs/storage``: an async API backed by
 ``redis.asyncio`` that all of them import.
 
 Key layout
@@ -20,8 +20,8 @@ Key layout
 provider (fal http) URL, and is load-bearing for i2v ``image_url`` threading in real
 mode — fal fetches the reference image over the public internet, not the local copy.
 
-Durable Postgres package records + per-node history land in Phase 3 (planning tier),
-additively behind this same interface; Phase 2 is Redis-only.
+Durable Postgres package records + per-node history land later (with the planning
+tier), additively behind this same interface; for now this is Redis-only.
 """
 
 from __future__ import annotations
@@ -60,6 +60,7 @@ __all__ = [
     "set_project_phase",
     "set_final_url",
     "get_final_url",
+    "get_cost",
 ]
 
 
@@ -211,3 +212,10 @@ async def set_final_url(project_id: str, url: str) -> None:
 
 async def get_final_url(project_id: str) -> str | None:
     return await _redis().get(f"project:{project_id}:final_url")
+
+
+async def get_cost(project_id: str) -> float:
+    """Cumulative spend-to-date for the run (the ``cost:{project_id}`` key owned by
+    ``CostTracker``). Read-only view for the SSE observability surface (spec §12.4)."""
+    raw = await _redis().get(f"cost:{project_id}")
+    return float(raw) if raw else 0.0

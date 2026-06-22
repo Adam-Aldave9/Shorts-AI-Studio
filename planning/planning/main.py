@@ -50,5 +50,5 @@ async def create_brief(brief: Brief) -> ProductionPackage:
     report: ValidationReport = validate_package(package)
     if not report.ok:
         raise HTTPException(status_code=422, detail=report.errors)
-    # TODO(week3): persist to Postgres keyed by project_id.
+    # TODO: persist to Postgres keyed by project_id.
     return package

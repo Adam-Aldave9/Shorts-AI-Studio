@@ -1,4 +1,4 @@
-"""No-network checks for the Phase 1 driver's ordering + payload helpers."""
+"""No-network checks for the sequential driver's ordering + payload helpers."""
 
 from __future__ import annotations
 

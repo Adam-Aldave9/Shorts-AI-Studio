@@ -1,12 +1,12 @@
 """Typer CLI for the AI Film Pipeline (spec §12).
 
 Commands:
-  render-local  Phase 1 dumb sequential driver — renders a hand-authored package
+  render-local  Dumb sequential driver — renders a hand-authored package
                 end to end (topo walk -> adapters -> MinIO -> FFmpeg composite),
-                with no Celery/scheduler/rate-limiter. The Phase 1 deliverable.
+                with no Celery/scheduler/rate-limiter.
   seed-mock     Synthesize the placeholder assets the mock adapter points at and
                 upload them to MinIO, so the free end-to-end mock run can composite.
-  bench         (Phase 4) Replay the flagship package at N worker counts -> CSV.
+  bench         Replay the flagship package at N worker counts -> CSV.
   critical-path Print the DAG critical path (the theoretical render-time floor).
 """
 
@@ -22,7 +22,7 @@ from pathlib import Path
 
 import typer
 
-app = typer.Typer(help="AI Film Pipeline harness + Phase 1 sequential driver.")
+app = typer.Typer(help="AI Film Pipeline harness + sequential driver.")
 
 # How long to wait between status polls for async providers (fal). Mock mode
 # completes on the first poll, so this only bites real runs.
@@ -30,7 +30,7 @@ _POLL_INTERVAL_S = 3.0
 
 
 # --------------------------------------------------------------------------
-# Phase 1 — sequential driver
+# Sequential driver
 # --------------------------------------------------------------------------
 def _topo_order(pkg) -> list:
     """Return assets in dependency order (a dependency precedes its dependents)."""
@@ -60,7 +60,7 @@ def _topo_order(pkg) -> list:
 
 
 # The payload/extension/archival logic is the load-bearing per-node code shared
-# with the Phase 2 worker; it lives in ``worker.render`` so there's one source of
+# with the Celery worker; it lives in ``worker.render`` so there's one source of
 # truth. These thin shims keep the driver's call sites (and its tests) stable while
 # delegating the real work. Imported lazily, matching this file's idiom.
 def _ext_for(kind: str, url: str) -> str:
@@ -112,7 +112,7 @@ def render_local(
     package: Path = typer.Option(..., exists=True, help="Production package JSON."),
     mock: bool = typer.Option(False, "--mock", help="Force MOCK mode ($0, placeholder assets)."),
 ) -> None:
-    """Render a package end to end with a dumb sequential driver (Phase 1)."""
+    """Render a package end to end with a dumb sequential driver."""
     from adapters import ProviderError
     from adapters.registry import mock_enabled
     from schema import ProductionPackage
@@ -204,7 +204,60 @@ def seed_mock() -> None:
 
 
 # --------------------------------------------------------------------------
-# Phase 4 — throughput benchmark (unchanged stub)
+# Submit a package to the distributed fleet
+# --------------------------------------------------------------------------
+def _scheduler_base(scheduler_url: str | None) -> str:
+    """Resolve the scheduler base URL: explicit flag > ``$SCHEDULER_URL`` > localhost.
+
+    The harness is a host-side CLI (no container), so the default targets the
+    published port rather than the in-network ``scheduler`` hostname.
+    """
+    url = scheduler_url or os.environ.get("SCHEDULER_URL") or "http://localhost:8001"
+    return url.rstrip("/")
+
+
+@app.command()
+def submit(
+    package: Path = typer.Option(..., exists=True, help="Production package JSON to submit."),
+    approve: bool = typer.Option(
+        False, "--approve", help="Approve immediately after ingest to kick the daemon."
+    ),
+    scheduler_url: str = typer.Option(
+        None, help="Scheduler base URL (default: $SCHEDULER_URL or http://localhost:8001)."
+    ),
+) -> None:
+    """POST a package to the scheduler (and optionally approve it): the entry
+    that kicks the distributed run, the counterpart to ``render-local``."""
+    import httpx
+    from schema import ProductionPackage
+
+    pkg = ProductionPackage.model_validate_json(package.read_text())  # fail fast on bad JSON
+    base = _scheduler_base(scheduler_url)
+
+    try:
+        resp = httpx.post(
+            f"{base}/packages",
+            content=pkg.model_dump_json(),
+            headers={"content-type": "application/json"},
+            timeout=30.0,
+        )
+        resp.raise_for_status()
+        project_id = resp.json()["project_id"]
+        typer.echo(f"submitted {project_id} -> {base}")
+
+        if approve:
+            resp = httpx.post(f"{base}/packages/{project_id}/approve", timeout=30.0)
+            resp.raise_for_status()
+            typer.secho(f"approved {project_id} -> daemon will begin dispatch", fg=typer.colors.GREEN)
+    except httpx.HTTPError as exc:
+        typer.secho(f"submit failed: {exc}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(1) from exc
+
+    typer.echo(f"watch: {base}/packages/{project_id}/events")
+
+
+# --------------------------------------------------------------------------
+# Throughput benchmark (stub)
 # --------------------------------------------------------------------------
 @app.command()
 def bench(
@@ -217,7 +270,7 @@ def bench(
     pkg = json.loads(package.read_text())
     typer.echo(f"Loaded package {pkg.get('project_id', '?')} with {len(pkg.get('assets', []))} nodes")
     for n in counts:
-        # TODO(week4): scale `worker` to n replicas via docker SDK, trigger the
+        # TODO: scale `worker` to n replicas via docker SDK, trigger the
         # run in MOCK mode, collect per-node start/end timestamps + queue depth.
         typer.echo(f"[stub] would run package at {n} worker(s)")
     typer.echo(f"[stub] would write {out}")
