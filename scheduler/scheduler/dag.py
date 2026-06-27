@@ -1,13 +1,17 @@
 """In-memory DAG over a production package's assets (spec §6.1).
 
 Finds nodes whose dependencies are all ``succeeded`` (ready to dispatch) and
-computes the critical path — the throughput floor no amount of parallelism can
-beat (spec §2.3, §12.2).
+computes the critical path — the longest dependency chain, the throughput floor
+no amount of parallelism can beat (spec §2.3, §12.2). One parameterized
+implementation yields two floors: a *content* floor (spec durations, the
+default) and a *render-time* floor (latency-weighted; Graph B).
 """
 
 from __future__ import annotations
 
-from schema import NodeStatus, ProductionPackage
+from collections.abc import Callable
+
+from schema import Asset, NodeStatus, ProductionPackage
 
 
 class Dag:
@@ -51,23 +55,34 @@ class Dag:
             a.status is NodeStatus.DISPATCHED for a in self._assets.values()
         )
 
-    def critical_path_estimate(self) -> float:
-        """Longest dependency chain by estimated duration — the theoretical floor.
+    def critical_path_estimate(
+        self, weight: Callable[[Asset], float] | None = None
+    ) -> float:
+        """Longest dependency chain by per-node ``weight`` — a critical-path floor.
 
-        Uses ``spec.duration_s`` where present, else a flat per-node estimate.
+        With the default ``weight`` (each node's ``spec.duration_s``, i.e. *content*
+        seconds, flat ``1.0`` where absent) this is the **content** critical path:
+        the mode-independent floor the SSE stream / frontend report. Pass a *latency*
+        weight (per-node execution time — in mock mode the provider latency from
+        ``adapters.mock._PROFILES``) to get the **render-time floor** (Graph B, spec
+        §12.2): the wall-clock no amount of parallelism can beat. One algorithm, two
+        floors — so the scheduler, the harness, and the notebook never drift.
         """
+        if weight is None:
+            def weight(asset: Asset) -> float:
+                return float(asset.spec.get("duration_s", 1.0))
+
         memo: dict[str, float] = {}
 
         def cost(node_id: str) -> float:
             if node_id in memo:
                 return memo[node_id]
             asset = self._assets[node_id]
-            self_cost = float(asset.spec.get("duration_s", 1.0))
             dep_cost = max(
                 (cost(d) for d in asset.depends_on if d in self._assets),
                 default=0.0,
             )
-            memo[node_id] = self_cost + dep_cost
+            memo[node_id] = weight(asset) + dep_cost
             return memo[node_id]
 
         return max((cost(n) for n in self._assets), default=0.0)

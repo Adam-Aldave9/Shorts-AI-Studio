@@ -2,10 +2,8 @@
 //
 // Request/response shapes come straight from the OpenAPI-generated types
 // (`npm run gen:api` -> planning.d.ts / scheduler.d.ts), so they stay in lockstep
-// with the FastAPI/Pydantic models with no manual sync (spec §3.1, §9.1). The one
-// hand-typed shape is the SSE status frame: OpenAPI does not describe SSE bodies,
-// so `StatusEvent` below is kept in sync by hand against `_status_event` in
-// scheduler/scheduler/main.py.
+// with the FastAPI/Pydantic models with no manual sync (spec §3.1, §9.1). The lone
+// exception is the SSE status frame, hand-typed below.
 
 import type { components as PlanningComponents } from "./planning";
 import type { components as SchedulerComponents } from "./scheduler";

@@ -76,13 +76,11 @@ __all__ = [
 # --------------------------------------------------------------------------
 # Client management
 # --------------------------------------------------------------------------
-# A ``redis.asyncio`` client's connection pool is bound to the event loop that is
-# running when it first issues a command. The scheduler runs one long-lived loop
-# (FastAPI), but the worker drives each Celery task through its own ``asyncio.run``
-# — a fresh loop per task. So we cache one client *per running loop* (and prune
-# loops that have closed) rather than a single global, which would raise
-# "attached to a different loop" on the worker's second task. ``use_client``
-# overrides everything for tests (fakeredis).
+# A ``redis.asyncio`` client's connection pool binds to the loop running when it
+# first issues a command. The scheduler has one long-lived loop, but the worker runs
+# each Celery task in its own ``asyncio.run`` — a fresh loop per task. So we cache one
+# client per running loop (pruning closed ones), not a single global that would raise
+# "attached to a different loop" on the worker's second task. ``use_client`` is for tests.
 _override: redis.Redis | None = None
 _clients: dict[asyncio.AbstractEventLoop, redis.Redis] = {}
 
