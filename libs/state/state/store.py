@@ -21,19 +21,26 @@ Key layout
 provider (fal http) URL, and is load-bearing for i2v ``image_url`` threading in real
 mode — fal fetches the reference image over the public internet, not the local copy.
 
-Durable Postgres package records + per-node history land later (with the planning
-tier), additively behind this same interface; for now this is Redis-only.
+Redis is the hot path. When ``POSTGRES_URL`` is set, every write is also mirrored
+into Postgres (the durable system of record, :mod:`state.pg`) on a best-effort basis
+— a Postgres failure logs but never breaks the run — and reads fall back to Postgres
+on a Redis miss. With no ``POSTGRES_URL`` this is Redis-only, exactly as before.
 """
 
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
-from typing import AsyncIterator
+from typing import Awaitable, AsyncIterator, Callable
 
 import redis.asyncio as redis
 
 from schema import NodeStatus, ProductionPackage
+
+from state import pg
+
+log = logging.getLogger(__name__)
 
 # -- project phases (string-valued; constants keep the daemon/compositor honest) --
 PHASE_EXECUTING = "executing"
@@ -86,6 +93,42 @@ def use_client(client: redis.Redis | None) -> None:
     _override = client
 
 
+# --------------------------------------------------------------------------
+# Postgres write-through (best-effort, additive behind this interface)
+# --------------------------------------------------------------------------
+async def _mirror(write: Callable[[], Awaitable[None]], what: str) -> None:
+    """Mirror a write into Postgres when configured. The durability layer must
+    never break the Redis hot path, so any failure is logged and swallowed."""
+    if not pg.enabled():
+        return
+    try:
+        await write()
+    except Exception:  # noqa: BLE001 - durability is additive; the run goes on
+        log.warning("postgres write-through failed (%s)", what, exc_info=True)
+
+
+async def _fallback_package(project_id: str) -> ProductionPackage | None:
+    """Serve a package from Postgres on a Redis miss (durability / replay)."""
+    if not pg.enabled():
+        return None
+    try:
+        return await pg.fetch_package(project_id)
+    except Exception:  # noqa: BLE001
+        log.warning("postgres read-fallback failed for %s", project_id, exc_info=True)
+        return None
+
+
+async def _all_project_ids() -> list[str]:
+    """Project ids for the History list: the durable ``packages`` table when
+    Postgres is configured (survives a Redis flush), else the Redis index."""
+    if pg.enabled():
+        try:
+            return await pg.list_project_ids()
+        except Exception:  # noqa: BLE001
+            log.warning("postgres list failed; falling back to redis index", exc_info=True)
+    return list(await _redis().smembers("projects:all"))
+
+
 def _redis() -> redis.Redis:
     if _override is not None:
         return _override
@@ -113,6 +156,7 @@ async def save_package(package: ProductionPackage, *, approved: bool | None = No
         await r.sadd("projects:approved", package.project_id)
     elif approved is False:
         await r.srem("projects:approved", package.project_id)
+    await _mirror(lambda: pg.write_package(package, approved), "save_package")
 
 
 async def get_package(project_id: str) -> ProductionPackage | None:
@@ -121,7 +165,7 @@ async def get_package(project_id: str) -> ProductionPackage | None:
     r = _redis()
     raw = await r.get(f"pkg:{project_id}")
     if not raw:
-        return None
+        return await _fallback_package(project_id)
     package = ProductionPackage.model_validate_json(raw)
     for asset in package.assets:
         node = await r.hgetall(f"node:{project_id}:{asset.node_id}")
@@ -142,6 +186,7 @@ async def approve_package(project_id: str) -> bool:
     if not await r.exists(f"pkg:{project_id}"):
         return False
     await r.sadd("projects:approved", project_id)
+    await _mirror(lambda: pg.mark_approved(project_id), "approve_package")
     return True
 
 
@@ -154,9 +199,9 @@ async def iter_approved_packages() -> AsyncIterator[ProductionPackage]:
 
 async def iter_all_packages() -> AsyncIterator[ProductionPackage]:
     """Yield every persisted package — the History list (spec §9.2). Backed by the
-    ``projects:all`` index that ``save_package`` maintains on every write (approved
-    or not). Postgres becomes the durable source later, behind this same interface."""
-    for project_id in await _redis().smembers("projects:all"):
+    durable ``packages`` table when Postgres is configured (so it survives a Redis
+    flush), else by the ``projects:all`` index ``save_package`` maintains."""
+    for project_id in await _all_project_ids():
         package = await get_package(project_id)
         if package is not None:
             yield package
@@ -182,6 +227,9 @@ async def set_node_status(
         if value is not None:
             mapping[key] = value if isinstance(value, str) else str(value)
     await _redis().hset(f"node:{project_id}:{node_id}", mapping=mapping)
+    await _mirror(
+        lambda: pg.write_node_status(project_id, node_id, status, fields), "set_node_status"
+    )
 
 
 async def get_node(project_id: str, node_id: str) -> dict[str, str]:
@@ -191,7 +239,9 @@ async def get_node(project_id: str, node_id: str) -> dict[str, str]:
 
 async def increment_attempts(project_id: str, node_id: str) -> int:
     """Bump and return the node's attempt counter (one per try, for SSE/observability)."""
-    return await _redis().hincrby(f"node:{project_id}:{node_id}", "attempts", 1)
+    count = await _redis().hincrby(f"node:{project_id}:{node_id}", "attempts", 1)
+    await _mirror(lambda: pg.write_attempts(project_id, node_id, count), "increment_attempts")
+    return count
 
 
 async def get_dep_provider_urls(project_id: str, dep_ids: list[str]) -> dict[str, str]:
