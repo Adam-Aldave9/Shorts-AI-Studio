@@ -11,11 +11,14 @@ import asyncio
 import contextlib
 import json
 import logging
+from datetime import datetime
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
 from schema import ProductionPackage
 from sse_starlette.sse import EventSourceResponse
+from validator import validate_package
 
 from scheduler.daemon import run_daemon
 from scheduler.dag import Dag
@@ -29,6 +32,7 @@ from scheduler.state import (
     get_node,
     get_package,
     get_project_phase,
+    iter_all_packages,
     save_package,
 )
 
@@ -65,6 +69,18 @@ async def _stop_daemon() -> None:
             await _daemon_task
 
 
+class PackageSummary(BaseModel):
+    """A compact package row for the History list (spec §9.2) — enough to render the
+    table and link into a run without shipping the whole DAG. ``phase`` and
+    ``cost_usd`` are overlaid from live run state, the rest from the package spec."""
+
+    project_id: str
+    title: str
+    created_at: datetime
+    phase: str | None
+    cost_usd: float
+
+
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
@@ -84,6 +100,27 @@ async def create_package(package: ProductionPackage) -> dict[str, str]:
     return {"project_id": package.project_id}
 
 
+@app.get("/packages", response_model=list[PackageSummary])
+async def list_packages() -> list[PackageSummary]:
+    """List every persisted package for the History screen (spec §9.2), newest first.
+
+    Backed by the ``projects:all`` index that ``save_package`` maintains; phase and
+    cost-to-date are overlaid from live run state. (Postgres becomes the durable
+    source for this list later, behind the same ``state`` interface.)"""
+    summaries = [
+        PackageSummary(
+            project_id=pkg.project_id,
+            title=pkg.meta.title,
+            created_at=pkg.created_at,
+            phase=await get_project_phase(pkg.project_id),
+            cost_usd=await get_cost(pkg.project_id),
+        )
+        async for pkg in iter_all_packages()
+    ]
+    summaries.sort(key=lambda s: s.created_at, reverse=True)
+    return summaries
+
+
 @app.get("/packages/{project_id}", response_model=ProductionPackage)
 async def read_package(project_id: str) -> ProductionPackage:
     package = await get_package(project_id)
@@ -95,8 +132,6 @@ async def read_package(project_id: str) -> ProductionPackage:
 @app.put("/packages/{project_id}", response_model=ProductionPackage)
 async def update_package(project_id: str, package: ProductionPackage) -> ProductionPackage:
     """Save a checkpoint edit. Re-runs the validator server-side (spec §4.3)."""
-    from planning.validator import validate_package  # lazy: avoid hard dep at import
-
     report = validate_package(package)
     if not report.ok:
         raise HTTPException(422, detail=report.errors)

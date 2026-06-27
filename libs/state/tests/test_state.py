@@ -116,6 +116,25 @@ def test_attempts_phase_and_final_url():
     _run(scenario)
 
 
+def test_projects_all_index_lists_every_package():
+    async def scenario():
+        approved = _pkg()  # p_test
+        unapproved = _pkg()
+        unapproved.project_id = "p_other"
+        await state.save_package(approved, approved=True)
+        await state.save_package(unapproved)
+
+        # projects:all carries every persisted package, approved or not (History list)
+        all_ids = sorted([p.project_id async for p in state.iter_all_packages()])
+        assert all_ids == ["p_other", "p_test"]
+
+        # the approved set is still independent — only the approved one is in it
+        approved_ids = [p.project_id async for p in state.iter_approved_packages()]
+        assert approved_ids == ["p_test"]
+
+    _run(scenario)
+
+
 def test_missing_package_and_approve():
     async def scenario():
         assert await state.get_package("nope") is None

@@ -72,6 +72,38 @@ def test_create_package_persists_and_returns_id():
     _run(scenario)
 
 
+def test_list_packages_returns_summaries_newest_first():
+    async def scenario(client):
+        from datetime import datetime, timezone
+
+        older = _pkg()  # p1, title "T"
+        older.created_at = datetime(2026, 1, 1, tzinfo=timezone.utc)
+        newer = _pkg()
+        newer.project_id = "p2"
+        newer.meta.title = "Second"
+        newer.created_at = datetime(2026, 2, 1, tzinfo=timezone.utc)
+
+        await state.save_package(older)
+        await state.save_package(newer)
+        # p1 has live phase + cost; p2 has neither yet.
+        await state.set_project_phase("p1", state.PHASE_COMPLETE)
+        await client.set("cost:p1", "1.50")
+
+        summaries = await main.list_packages()
+        assert [s.project_id for s in summaries] == ["p2", "p1"]  # newest first
+
+        newest, oldest = summaries
+        assert newest.title == "Second"
+        assert newest.phase is None
+        assert newest.cost_usd == pytest.approx(0.0)
+
+        assert oldest.title == "T"
+        assert oldest.phase == state.PHASE_COMPLETE
+        assert oldest.cost_usd == pytest.approx(1.50)
+
+    _run(scenario)
+
+
 def test_status_event_carries_live_node_phase_cost_and_final_url():
     async def scenario(client):
         await state.save_package(_pkg())
