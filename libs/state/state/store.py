@@ -8,6 +8,7 @@ seam, mirroring the extraction of ``libs/storage``: an async API backed by
 Key layout
 ----------
 ``pkg:{project_id}``                 the package spec JSON (``model_dump_json``).
+``projects:all``                     set of every persisted ``project_id`` (History list).
 ``projects:approved``                set of approved ``project_id``s.
 ``node:{project_id}:{node_id}``      hash of *live, mutable* run state — ``status``,
                                      ``asset_url``, ``provider_url``,
@@ -52,6 +53,7 @@ __all__ = [
     "get_package",
     "approve_package",
     "iter_approved_packages",
+    "iter_all_packages",
     "set_node_status",
     "get_node",
     "increment_attempts",
@@ -102,9 +104,11 @@ def _redis() -> redis.Redis:
 # Packages
 # --------------------------------------------------------------------------
 async def save_package(package: ProductionPackage, *, approved: bool | None = None) -> None:
-    """Persist the package spec. ``approved`` only touches the approved set when set."""
+    """Persist the package spec and register it in the ``projects:all`` index (the
+    History list, spec §9.2). ``approved`` only touches the approved set when set."""
     r = _redis()
     await r.set(f"pkg:{package.project_id}", package.model_dump_json())
+    await r.sadd("projects:all", package.project_id)
     if approved is True:
         await r.sadd("projects:approved", package.project_id)
     elif approved is False:
@@ -143,6 +147,16 @@ async def approve_package(project_id: str) -> bool:
 
 async def iter_approved_packages() -> AsyncIterator[ProductionPackage]:
     for project_id in await _redis().smembers("projects:approved"):
+        package = await get_package(project_id)
+        if package is not None:
+            yield package
+
+
+async def iter_all_packages() -> AsyncIterator[ProductionPackage]:
+    """Yield every persisted package — the History list (spec §9.2). Backed by the
+    ``projects:all`` index that ``save_package`` maintains on every write (approved
+    or not). Postgres becomes the durable source later, behind this same interface."""
+    for project_id in await _redis().smembers("projects:all"):
         package = await get_package(project_id)
         if package is not None:
             yield package
