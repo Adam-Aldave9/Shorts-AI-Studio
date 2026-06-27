@@ -149,8 +149,8 @@ async def approve(project_id: str) -> dict[str, str]:
 async def _status_event(project_id: str) -> dict | None:
     """Build one SSE status frame from live shared state — the run's observability
     surface (spec §9.2, §12.4): per-node status/attempts/error, project phase,
-    cost-to-date, the critical-path floor, and the final cut URL once it exists.
-    Returns ``None`` while the package is unknown (not yet ingested)."""
+    cost-to-date, the content critical-path floor, and the final cut URL once it
+    exists. Returns ``None`` while the package is unknown (not yet ingested)."""
     package = await get_package(project_id)
     if not package:
         return None
@@ -169,6 +169,8 @@ async def _status_event(project_id: str) -> dict | None:
         "phase": phase,
         "cost_usd": await get_cost(project_id),
         "nodes": nodes,
+        # The *content* critical path (spec.duration_s along the longest chain),
+        # not the latency-weighted render-time floor (Graph B) the benchmark computes.
         "critical_path_s": dag.critical_path_estimate(),
         "final_url": await get_final_url(project_id),
         "complete": phase == PHASE_COMPLETE,

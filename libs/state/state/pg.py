@@ -41,9 +41,8 @@ __all__ = [
 # --------------------------------------------------------------------------
 # DDL + statements (constants -> pure / unit-inspectable)
 # --------------------------------------------------------------------------
-# A single idempotent ``CREATE ... IF NOT EXISTS`` per startup is enough for v1
-# (spec §6.7, plan item 6). Kept as separate statements: psycopg's extended
-# protocol executes one command per ``execute`` call.
+# A single idempotent ``CREATE ... IF NOT EXISTS`` per startup is enough for v1.
+# Kept as separate statements: psycopg executes one command per ``execute`` call.
 INIT_STATEMENTS: list[str] = [
     """
     CREATE TABLE IF NOT EXISTS packages (
@@ -172,8 +171,8 @@ def row_to_package(spec: dict[str, Any]) -> ProductionPackage:
 # --------------------------------------------------------------------------
 # Thin connection wrappers (lazy psycopg - integration / e2e only)
 # --------------------------------------------------------------------------
-# Conninfo strings already DDL'd in this process, so the idempotent CREATEs run
-# once per process rather than on every connection.
+# Conninfo strings already initialized in this process, so the idempotent CREATEs
+# run once per process, not on every connection.
 _initialized: set[str] = set()
 
 

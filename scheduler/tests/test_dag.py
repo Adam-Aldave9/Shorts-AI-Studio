@@ -65,6 +65,33 @@ def test_all_succeeded_and_is_complete():
     assert failed.is_complete() and not failed.all_succeeded()
 
 
+def test_critical_path_default_is_content_floor_weight_overrides():
+    # ref_a -> shot_a is a 2-node chain; narration is a lone parallel root.
+    pkg = ProductionPackage(
+        project_id="p1",
+        meta=Meta(
+            title="T", premise="P", target_duration_s=6, style="s",
+            narration_voice_id="v", budget_usd=100.0,
+        ),
+        assets=[
+            Asset(node_id="ref_a", type=AssetType.IMAGE),  # no duration_s -> default 1.0
+            Asset(node_id="narration", type=AssetType.VOICEOVER, spec={"duration_s": 5.0}),
+            Asset(node_id="shot_a", type=AssetType.VIDEO, depends_on=["ref_a"],
+                  spec={"duration_s": 3.0}),
+        ],
+    )
+    dag = Dag(pkg)
+
+    # Default weight = content seconds (1.0 fallback): chain ref_a(1)+shot_a(3)=4
+    # loses to the lone narration root (5). This is the pre-existing behavior.
+    assert dag.critical_path_estimate() == 5.0
+
+    # A latency-style weight keyed by type (image 8, video 40, voiceover 6):
+    # now ref_a(8)+shot_a(40)=48 dominates narration(6) -> a different floor.
+    profile = {AssetType.IMAGE: 8.0, AssetType.VIDEO: 40.0, AssetType.VOICEOVER: 6.0}
+    assert dag.critical_path_estimate(weight=lambda a: profile[a.type]) == 48.0
+
+
 def test_is_blocked_only_when_nothing_can_progress():
     P, D, S, F = (
         NodeStatus.PENDING, NodeStatus.DISPATCHED, NodeStatus.SUCCEEDED, NodeStatus.FAILED,
