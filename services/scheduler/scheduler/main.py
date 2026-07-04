@@ -13,7 +13,9 @@ import json
 import logging
 from datetime import datetime
 
-from fastapi import FastAPI, HTTPException
+from auth import auth_router, current_user_id, install_auth, owned_package
+from auth.config import AUTH_ALLOWED_ORIGINS
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from schema import ProductionPackage
@@ -32,7 +34,7 @@ from scheduler.state import (
     get_node,
     get_package,
     get_project_phase,
-    iter_all_packages,
+    iter_user_packages,
     save_package,
 )
 
@@ -43,9 +45,18 @@ app = FastAPI(title="AI Film Pipeline — Scheduler Service", version="1.0.0")
 # can close: ``complete`` (final cut ready), or ``blocked``/``paused`` (awaiting a
 # human edit + re-run, spec §10.2). The client reconnects when the run resumes.
 _TERMINAL_PHASES = {PHASE_COMPLETE, PHASE_BLOCKED, PHASE_PAUSED}
+
+# Auth: mount the shared /auth router and enforce session + CSRF on everything except
+# the public allow-list. Middleware is added auth-first then CORS-last so CORS ends up
+# outermost — it annotates even auth-denied responses in the direct-origin dev case
+# (behind the reverse proxy the browser is same-origin, so CORS mostly stops applying).
+app.include_router(auth_router)
+install_auth(app, public_paths={"/health", "/auth/login", "/auth/register", "/auth/csrf"})
+# Credentialed CORS: an explicit origin allow-list (never "*" with credentials).
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=AUTH_ALLOWED_ORIGINS,
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -87,26 +98,29 @@ def health() -> dict[str, str]:
 
 
 @app.post("/packages", status_code=201)
-async def create_package(package: ProductionPackage) -> dict[str, str]:
+async def create_package(
+    package: ProductionPackage, user_id: str = Depends(current_user_id)
+) -> dict[str, str]:
     """Ingest a full production package — the execution entry point.
 
     The package is already authored/validated upstream (the sequential driver, the
     ``harness submit`` test entry, or the planning tier handing off the
     same way), so this does not re-run the validator; checkpoint edits via ``PUT``
-    do. Persisting it makes it visible to the daemon once ``/approve`` adds it to the
-    approved set.
+    do. Persisting it stamps the caller as owner and makes it visible to the daemon
+    once ``/approve`` adds it to the approved set.
     """
-    await save_package(package)
+    await save_package(package, owner_id=user_id)
     return {"project_id": package.project_id}
 
 
 @app.get("/packages", response_model=list[PackageSummary])
-async def list_packages() -> list[PackageSummary]:
-    """List every persisted package for the History screen (spec §9.2), newest first.
+async def list_packages(user_id: str = Depends(current_user_id)) -> list[PackageSummary]:
+    """List the caller's persisted packages for the History screen (spec §9.2),
+    newest first — per-user isolation, so a user only ever sees their own runs.
 
-    Backed by the ``projects:all`` index that ``save_package`` maintains; phase and
-    cost-to-date are overlaid from live run state. (Postgres becomes the durable
-    source for this list later, behind the same ``state`` interface.)"""
+    Scoped by owner via ``iter_user_packages`` (durable ``packages.owner_id`` when
+    Postgres is on, else the Redis owner index); phase and cost-to-date are overlaid
+    from live run state."""
     summaries = [
         PackageSummary(
             project_id=pkg.project_id,
@@ -115,23 +129,36 @@ async def list_packages() -> list[PackageSummary]:
             phase=await get_project_phase(pkg.project_id),
             cost_usd=await get_cost(pkg.project_id),
         )
-        async for pkg in iter_all_packages()
+        async for pkg in iter_user_packages(user_id)
     ]
     summaries.sort(key=lambda s: s.created_at, reverse=True)
     return summaries
 
 
-@app.get("/packages/{project_id}", response_model=ProductionPackage)
+@app.get(
+    "/packages/{project_id}",
+    response_model=ProductionPackage,
+    dependencies=[Depends(owned_package)],
+)
 async def read_package(project_id: str) -> ProductionPackage:
+    # ``owned_package`` already 404s if the caller doesn't own project_id (no
+    # existence leak), so a hit here means the package is both present and owned.
     package = await get_package(project_id)
     if not package:
         raise HTTPException(404, "package not found")
     return package
 
 
-@app.put("/packages/{project_id}", response_model=ProductionPackage)
+@app.put(
+    "/packages/{project_id}",
+    response_model=ProductionPackage,
+    dependencies=[Depends(owned_package)],
+)
 async def update_package(project_id: str, package: ProductionPackage) -> ProductionPackage:
-    """Save a checkpoint edit. Re-runs the validator server-side (spec §4.3)."""
+    """Save a checkpoint edit. Re-runs the validator server-side (spec §4.3).
+
+    ``owner_id`` is omitted so the existing owner is preserved (the store/Postgres
+    COALESCE ownership across edits) — an edit can never reassign a package."""
     report = validate_package(package)
     if not report.ok:
         raise HTTPException(422, detail=report.errors)
@@ -139,7 +166,7 @@ async def update_package(project_id: str, package: ProductionPackage) -> Product
     return package
 
 
-@app.post("/packages/{project_id}/approve")
+@app.post("/packages/{project_id}/approve", dependencies=[Depends(owned_package)])
 async def approve(project_id: str) -> dict[str, str]:
     if not await approve_package(project_id):
         raise HTTPException(404, "package not found")
@@ -177,7 +204,7 @@ async def _status_event(project_id: str) -> dict | None:
     }
 
 
-@app.get("/packages/{project_id}/events")
+@app.get("/packages/{project_id}/events", dependencies=[Depends(owned_package)])
 async def events(project_id: str) -> EventSourceResponse:
     """SSE stream of live run state for the Status screen (spec §9.2).
 

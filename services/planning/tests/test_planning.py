@@ -214,11 +214,13 @@ def test_create_brief_persists_and_returns_project_id(monkeypatch):
         client = fakeredis_aio.FakeRedis(decode_responses=True)
         state.use_client(client)
         try:
-            accepted = await main.create_brief(main.Brief(**_brief()))
+            accepted = await main.create_brief(main.Brief(**_brief()), user_id="user_a")
             assert accepted.project_id.startswith("p_")
-            # The scheduler's store sees the package immediately, unapproved.
+            # The scheduler's store sees the package immediately, unapproved, and
+            # stamped with the authenticated caller as owner.
             stored = await state.get_package(accepted.project_id)
             assert stored is not None
+            assert await state.get_project_owner(accepted.project_id) == "user_a"
             approved = [p.project_id async for p in state.iter_approved_packages()]
             assert approved == []
         finally:

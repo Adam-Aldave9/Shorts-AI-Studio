@@ -10,7 +10,9 @@ ENV PYTHONUNBUFFERED=1 PIP_NO_CACHE_DIR=1
 # write-through that persists the package for the scheduler to serve.
 COPY libs/schema /app/libs/schema
 COPY libs/validator /app/libs/validator
+COPY libs/rate-limiter /app/libs/rate-limiter
 COPY libs/state /app/libs/state
+COPY libs/auth /app/libs/auth
 COPY services/planning /app/planning
 
 # Data the planning tier reads at runtime: the hand-authored mock package (MOCK /
@@ -22,7 +24,7 @@ COPY data/world-bibles /app/world-bibles
 ENV MOCK_PACKAGE_PATH=/app/example-packages/rainforest-90s.json \
     WORLD_BIBLE_PATH=/app/world-bibles/amazon-rainforest.json
 
-RUN pip install ./libs/schema ./libs/validator ./libs/state ./planning
+RUN pip install ./libs/schema ./libs/validator ./libs/rate-limiter ./libs/state ./libs/auth ./planning
 
 EXPOSE 8000
 CMD ["uvicorn", "planning.main:app", "--host", "0.0.0.0", "--port", "8000"]
