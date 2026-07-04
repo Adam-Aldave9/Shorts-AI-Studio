@@ -9,7 +9,7 @@ COPY libs/adapters /app/libs/adapters
 COPY libs/rate-limiter /app/libs/rate-limiter
 COPY libs/storage /app/libs/storage
 COPY libs/state /app/libs/state
-COPY worker /app/worker
+COPY services/worker /app/worker
 
 RUN pip install ./libs/schema ./libs/adapters ./libs/rate-limiter ./libs/storage ./libs/state ./worker
 

@@ -10,7 +10,7 @@ entity's canonical description — the consistency mechanism.
 
 Mock-first, $0 by default: when ``MOCK=true`` or ``ANTHROPIC_API_KEY`` is unset,
 ``run_planning`` short-circuits to the hand-authored, already-validated
-``example-packages/rainforest-90s.json`` (30 shots) without importing the LLM stack
+``data/example-packages/rainforest-90s.json`` (30 shots) without importing the LLM stack
 at all. That keeps the checkpoint, frontend, and end-to-end demo free and offline —
 the same gate that kept Phase 1/2 free — and is a strict upgrade over the old
 3-node stub. ``langgraph`` / ``langchain`` are imported lazily so neither the mock
@@ -36,9 +36,9 @@ from planning.world import load_world
 
 log = logging.getLogger("planning")
 
-# planning/planning/graph.py -> parents[2] is the repo root.
-_REPO_ROOT = Path(__file__).resolve().parents[2]
-_DEFAULT_MOCK_PACKAGE = _REPO_ROOT / "example-packages" / "rainforest-90s.json"
+# services/planning/planning/graph.py -> parents[3] is the repo root.
+_REPO_ROOT = Path(__file__).resolve().parents[3]
+_DEFAULT_MOCK_PACKAGE = _REPO_ROOT / "data" / "example-packages" / "rainforest-90s.json"
 
 _TRUTHY = {"1", "true", "yes", "on"}
 

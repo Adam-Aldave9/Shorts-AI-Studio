@@ -54,7 +54,7 @@ services:
   planning:
     build:
       context: .
-      dockerfile: planning/Dockerfile
+      dockerfile: services/planning/Dockerfile
     environment:
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       REDIS_URL: redis://redis:6379/0
@@ -71,7 +71,7 @@ services:
   scheduler:
     build:
       context: .
-      dockerfile: scheduler/Dockerfile
+      dockerfile: services/scheduler/Dockerfile
     environment:
       REDIS_URL: redis://redis:6379/0
       POSTGRES_URL: postgresql://afp:afp@postgres:5432/afp
@@ -86,7 +86,7 @@ services:
   worker:
     build:
       context: .
-      dockerfile: worker/Dockerfile
+      dockerfile: services/worker/Dockerfile
     environment:
       REDIS_URL: redis://redis:6379/0
       POSTGRES_URL: postgresql://afp:afp@postgres:5432/afp
@@ -109,7 +109,7 @@ services:
   compositor:
     build:
       context: .
-      dockerfile: compositor/Dockerfile
+      dockerfile: services/compositor/Dockerfile
     environment:
       REDIS_URL: redis://redis:6379/0
       POSTGRES_URL: postgresql://afp:afp@postgres:5432/afp
@@ -125,7 +125,7 @@ services:
 
   frontend:
     build:
-      context: frontend
+      context: services/frontend
       dockerfile: Dockerfile
     ports:
       - "5173:80"

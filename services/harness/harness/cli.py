@@ -269,7 +269,7 @@ def submit(
 # --------------------------------------------------------------------------
 # Throughput benchmark (spec §12 — the headline graphs)
 # --------------------------------------------------------------------------
-_REPO_ROOT = Path(__file__).resolve().parents[2]
+_REPO_ROOT = Path(__file__).resolve().parents[3]
 _COMPOSE_FILE = "docker-compose.yml"
 
 # Canonical CSV schema — raw per-trial rows; the notebook averages and draws

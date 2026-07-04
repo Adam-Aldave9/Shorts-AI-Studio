@@ -12,7 +12,7 @@ import pandas as pd
 
 from harness.cli import _BENCH_COLUMNS, bench
 
-FIXTURE = Path(__file__).resolve().parents[2] / "example-packages" / "rainforest-90s.json"
+FIXTURE = Path(__file__).resolve().parents[3] / "data" / "example-packages" / "rainforest-90s.json"
 
 
 def test_bench_dry_run_csv_schema(tmp_path):

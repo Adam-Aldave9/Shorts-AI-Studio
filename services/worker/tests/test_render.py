@@ -14,7 +14,7 @@ from schema import ProductionPackage
 
 from worker.render import archive_result, build_payload, ext_for
 
-FIXTURE = Path(__file__).resolve().parents[2] / "example-packages" / "rainforest-90s.json"
+FIXTURE = Path(__file__).resolve().parents[3] / "data" / "example-packages" / "rainforest-90s.json"
 
 
 def _pkg() -> ProductionPackage:

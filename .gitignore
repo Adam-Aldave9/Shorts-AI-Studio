@@ -15,8 +15,8 @@ dist/
 
 # Node / frontend
 node_modules/
-frontend/dist/
-frontend/src/api/*.d.ts
+services/frontend/dist/
+services/frontend/src/api/*.d.ts
 *.tsbuildinfo
 
 # Data / artifacts
