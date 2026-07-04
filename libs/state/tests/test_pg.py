@@ -67,6 +67,32 @@ def test_init_statements_are_idempotent_ddl():
     assert "create or replace view cost_actuals" in joined
 
 
+def test_init_statements_include_users_and_owner_migration():
+    joined = "\n".join(pg.INIT_STATEMENTS).lower()
+    assert "create table if not exists users" in joined
+    # owner_id is added via idempotent ALTER (the packages table already exists)
+    assert "alter table packages add column if not exists owner_id" in joined
+    assert "create index if not exists packages_owner_idx" in joined
+
+
+def test_package_params_carries_owner_id():
+    params = pg.package_params(_pkg(), approved=None, owner_id="user_a")
+    assert params["owner_id"] == "user_a"
+    # default (checkpoint-edit path) preserves the stored owner via None
+    assert pg.package_params(_pkg(), approved=None)["owner_id"] is None
+
+
+def test_row_to_user_maps_columns_in_select_order():
+    row = ("u_1", "alice", "Alice", "hash_x", "2026-07-04")
+    assert pg.row_to_user(row) == {
+        "user_id": "u_1",
+        "username": "alice",
+        "display_username": "Alice",
+        "password_hash": "hash_x",
+        "created_at": "2026-07-04",
+    }
+
+
 def test_enabled_reflects_postgres_url(monkeypatch):
     monkeypatch.delenv("POSTGRES_URL", raising=False)
     assert pg.enabled() is False

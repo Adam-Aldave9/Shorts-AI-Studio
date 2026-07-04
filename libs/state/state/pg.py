@@ -32,11 +32,25 @@ __all__ = [
     "write_package",
     "mark_approved",
     "fetch_package",
+    "fetch_package_owner",
     "list_project_ids",
+    "list_project_ids_for_owner",
     "write_node_status",
     "write_attempts",
+    "insert_user",
+    "fetch_user_by_username",
+    "fetch_user_by_id",
+    "update_user_password",
+    "UserExistsError",
     "INIT_STATEMENTS",
 ]
+
+
+class UserExistsError(Exception):
+    """Raised when inserting a user whose (normalized) username already exists.
+
+    Maps the Postgres unique-violation on ``users.username`` to a typed error the
+    auth layer can translate into a 409, without leaking driver exceptions upward."""
 
 # --------------------------------------------------------------------------
 # DDL + statements (constants -> pure / unit-inspectable)
@@ -73,18 +87,40 @@ INIT_STATEMENTS: list[str] = [
         FROM node_history
         GROUP BY project_id
     """,
+    # Accounts (auth): ``username`` is the normalized (lowercased) form and is
+    # UNIQUE for case-insensitive uniqueness; ``display_username`` keeps the exact
+    # casing the user registered with. ``password_hash`` is an Argon2id hash — never
+    # a plaintext or reversible value.
+    """
+    CREATE TABLE IF NOT EXISTS users (
+        user_id          TEXT PRIMARY KEY,
+        username         TEXT NOT NULL UNIQUE,
+        display_username TEXT NOT NULL,
+        password_hash    TEXT NOT NULL,
+        created_at       TIMESTAMPTZ NOT NULL DEFAULT now()
+    )
+    """,
+    # Per-user ownership on the already-existing ``packages`` table. ADD COLUMN IF
+    # NOT EXISTS is the migration here (no Alembic): ``CREATE TABLE IF NOT EXISTS``
+    # alone never adds a column to a table that already exists. Legacy rows -> NULL
+    # owner (unowned).
+    "ALTER TABLE packages ADD COLUMN IF NOT EXISTS owner_id TEXT",
+    "CREATE INDEX IF NOT EXISTS packages_owner_idx ON packages (owner_id)",
 ]
 
 _UPSERT_PACKAGE = """
-INSERT INTO packages (project_id, title, schema_version, created_at, spec, approved)
+INSERT INTO packages (project_id, title, schema_version, created_at, spec, approved, owner_id)
 VALUES (%(project_id)s, %(title)s, %(schema_version)s, %(created_at)s, %(spec)s,
-        COALESCE(%(approved)s, FALSE))
+        COALESCE(%(approved)s, FALSE), %(owner_id)s)
 ON CONFLICT (project_id) DO UPDATE SET
     title          = EXCLUDED.title,
     schema_version = EXCLUDED.schema_version,
     created_at     = EXCLUDED.created_at,
     spec           = EXCLUDED.spec,
-    approved       = COALESCE(%(approved)s, packages.approved)
+    approved       = COALESCE(%(approved)s, packages.approved),
+    -- COALESCE preserves the original owner across checkpoint edits (which pass
+    -- owner_id=None), so a later save can never null out or reassign ownership.
+    owner_id       = COALESCE(%(owner_id)s, packages.owner_id)
 """
 
 # COALESCE on update so a later partial write (e.g. status only) does not clobber
@@ -110,7 +146,27 @@ ON CONFLICT (project_id, node_id) DO UPDATE SET
 
 _SELECT_PACKAGE = "SELECT spec FROM packages WHERE project_id = %(project_id)s"
 _SELECT_PROJECT_IDS = "SELECT project_id FROM packages"
+_SELECT_PROJECT_IDS_FOR_OWNER = (
+    "SELECT project_id FROM packages WHERE owner_id = %(owner_id)s"
+)
+_SELECT_PACKAGE_OWNER = "SELECT owner_id FROM packages WHERE project_id = %(project_id)s"
 _MARK_APPROVED = "UPDATE packages SET approved = TRUE WHERE project_id = %(project_id)s"
+
+_INSERT_USER = """
+INSERT INTO users (user_id, username, display_username, password_hash)
+VALUES (%(user_id)s, %(username)s, %(display_username)s, %(password_hash)s)
+"""
+_SELECT_USER_BY_USERNAME = (
+    "SELECT user_id, username, display_username, password_hash, created_at "
+    "FROM users WHERE username = %(username)s"
+)
+_SELECT_USER_BY_ID = (
+    "SELECT user_id, username, display_username, password_hash, created_at "
+    "FROM users WHERE user_id = %(user_id)s"
+)
+_UPDATE_USER_PASSWORD = (
+    "UPDATE users SET password_hash = %(password_hash)s WHERE user_id = %(user_id)s"
+)
 
 
 # --------------------------------------------------------------------------
@@ -134,12 +190,15 @@ def _as_float(value: Any) -> float | None:
         return None
 
 
-def package_params(package: ProductionPackage, approved: bool | None) -> dict[str, Any]:
+def package_params(
+    package: ProductionPackage, approved: bool | None, owner_id: str | None = None
+) -> dict[str, Any]:
     """Bind a package to the upsert: queryable columns + the full spec as JSON.
 
     ``spec`` is the JSON-mode dump (the replay source of truth); the caller wraps it
     in ``psycopg ... Jsonb`` before execution. ``approved=None`` preserves the stored
-    flag (see the ``COALESCE`` in the upsert)."""
+    flag, and ``owner_id=None`` preserves the stored owner (see the ``COALESCE``s in
+    the upsert)."""
     return {
         "project_id": package.project_id,
         "title": package.meta.title,
@@ -147,6 +206,20 @@ def package_params(package: ProductionPackage, approved: bool | None) -> dict[st
         "created_at": package.created_at,
         "spec": package.model_dump(mode="json"),
         "approved": approved,
+        "owner_id": owner_id,
+    }
+
+
+def row_to_user(row: tuple[Any, ...]) -> dict[str, Any]:
+    """Map a ``users`` row (the SELECT column order above) to a plain dict — the
+    shape the auth layer consumes. ``password_hash`` is included so ``authenticate``
+    can verify it; callers must never surface it past the auth boundary."""
+    return {
+        "user_id": row[0],
+        "username": row[1],
+        "display_username": row[2],
+        "password_hash": row[3],
+        "created_at": row[4],
     }
 
 
@@ -196,10 +269,12 @@ async def _execute(sql: str, params: dict[str, Any]) -> None:
         await conn.close()
 
 
-async def write_package(package: ProductionPackage, approved: bool | None = None) -> None:
+async def write_package(
+    package: ProductionPackage, approved: bool | None = None, owner_id: str | None = None
+) -> None:
     from psycopg.types.json import Jsonb
 
-    params = package_params(package, approved)
+    params = package_params(package, approved, owner_id)
     params["spec"] = Jsonb(params["spec"])
     await _execute(_UPSERT_PACKAGE, params)
 
@@ -236,3 +311,76 @@ async def list_project_ids() -> list[str]:
     finally:
         await conn.close()
     return [row[0] for row in rows]
+
+
+async def fetch_package_owner(project_id: str) -> str | None:
+    """Return the durable ``owner_id`` for a package (NULL/None if unowned/legacy)."""
+    conn = await _connect()
+    try:
+        cur = await conn.execute(_SELECT_PACKAGE_OWNER, {"project_id": project_id})
+        row = await cur.fetchone()
+    finally:
+        await conn.close()
+    return row[0] if row else None
+
+
+async def list_project_ids_for_owner(owner_id: str) -> list[str]:
+    """Project ids owned by ``owner_id`` — the durable backing for scoped History."""
+    conn = await _connect()
+    try:
+        cur = await conn.execute(_SELECT_PROJECT_IDS_FOR_OWNER, {"owner_id": owner_id})
+        rows = await cur.fetchall()
+    finally:
+        await conn.close()
+    return [row[0] for row in rows]
+
+
+# --------------------------------------------------------------------------
+# Users (accounts / auth)
+# --------------------------------------------------------------------------
+async def insert_user(
+    user_id: str, username: str, display_username: str, password_hash: str
+) -> None:
+    """Insert a new account. Raises :class:`UserExistsError` if the normalized
+    ``username`` is already taken (Postgres unique-violation, translated here)."""
+    import psycopg.errors
+
+    try:
+        await _execute(
+            _INSERT_USER,
+            {
+                "user_id": user_id,
+                "username": username,
+                "display_username": display_username,
+                "password_hash": password_hash,
+            },
+        )
+    except psycopg.errors.UniqueViolation as exc:
+        raise UserExistsError(username) from exc
+
+
+async def fetch_user_by_username(username: str) -> dict[str, Any] | None:
+    conn = await _connect()
+    try:
+        cur = await conn.execute(_SELECT_USER_BY_USERNAME, {"username": username})
+        row = await cur.fetchone()
+    finally:
+        await conn.close()
+    return row_to_user(row) if row else None
+
+
+async def fetch_user_by_id(user_id: str) -> dict[str, Any] | None:
+    conn = await _connect()
+    try:
+        cur = await conn.execute(_SELECT_USER_BY_ID, {"user_id": user_id})
+        row = await cur.fetchone()
+    finally:
+        await conn.close()
+    return row_to_user(row) if row else None
+
+
+async def update_user_password(user_id: str, password_hash: str) -> None:
+    """Replace a user's stored hash (rehash-on-login / password change)."""
+    await _execute(
+        _UPDATE_USER_PASSWORD, {"user_id": user_id, "password_hash": password_hash}
+    )

@@ -39,6 +39,7 @@ import redis.asyncio as redis
 from schema import NodeStatus, ProductionPackage
 
 from state import pg
+from state.pg import UserExistsError  # re-exported for the auth layer
 
 log = logging.getLogger(__name__)
 
@@ -61,6 +62,13 @@ __all__ = [
     "approve_package",
     "iter_approved_packages",
     "iter_all_packages",
+    "iter_user_packages",
+    "get_project_owner",
+    "create_user",
+    "get_user_by_username",
+    "get_user_by_id",
+    "set_user_password_hash",
+    "UserExistsError",
     "set_node_status",
     "get_node",
     "increment_attempts",
@@ -144,17 +152,28 @@ def _redis() -> redis.Redis:
 # --------------------------------------------------------------------------
 # Packages
 # --------------------------------------------------------------------------
-async def save_package(package: ProductionPackage, *, approved: bool | None = None) -> None:
+async def save_package(
+    package: ProductionPackage, *, approved: bool | None = None, owner_id: str | None = None
+) -> None:
     """Persist the package spec and register it in the ``projects:all`` index (the
-    History list, spec §9.2). ``approved`` only touches the approved set when set."""
+    History list, spec §9.2). ``approved`` only touches the approved set when set.
+
+    ``owner_id`` is passed on the create path (brief->package / ``POST /packages``)
+    and stamps ownership: ``project:{id}:owner`` plus membership in the owner's
+    ``user:{uid}:projects`` set (scoped History). Checkpoint edits pass
+    ``owner_id=None``, and both Redis and the Postgres upsert preserve the existing
+    owner, so an edit can never reassign or drop ownership."""
     r = _redis()
     await r.set(f"pkg:{package.project_id}", package.model_dump_json())
     await r.sadd("projects:all", package.project_id)
+    if owner_id is not None:
+        await r.set(f"project:{package.project_id}:owner", owner_id)
+        await r.sadd(f"user:{owner_id}:projects", package.project_id)
     if approved is True:
         await r.sadd("projects:approved", package.project_id)
     elif approved is False:
         await r.srem("projects:approved", package.project_id)
-    await _mirror(lambda: pg.write_package(package, approved), "save_package")
+    await _mirror(lambda: pg.write_package(package, approved, owner_id), "save_package")
 
 
 async def get_package(project_id: str) -> ProductionPackage | None:
@@ -203,6 +222,119 @@ async def iter_all_packages() -> AsyncIterator[ProductionPackage]:
         package = await get_package(project_id)
         if package is not None:
             yield package
+
+
+async def _user_project_ids(user_id: str) -> list[str]:
+    """Project ids owned by ``user_id`` — the durable ``packages.owner_id`` index
+    when Postgres is configured (survives a Redis flush), else the Redis
+    ``user:{uid}:projects`` set ``save_package`` maintains."""
+    if pg.enabled():
+        try:
+            return await pg.list_project_ids_for_owner(user_id)
+        except Exception:  # noqa: BLE001
+            log.warning("postgres owner-list failed; falling back to redis", exc_info=True)
+    return list(await _redis().smembers(f"user:{user_id}:projects"))
+
+
+async def iter_user_packages(user_id: str) -> AsyncIterator[ProductionPackage]:
+    """Yield every package owned by ``user_id`` — the per-user scoped History list."""
+    for project_id in await _user_project_ids(user_id):
+        package = await get_package(project_id)
+        if package is not None:
+            yield package
+
+
+async def get_project_owner(project_id: str) -> str | None:
+    """Return the owning ``user_id`` for a package (``None`` if unowned/legacy).
+
+    Reads the Redis ``project:{id}:owner`` key; on a miss (e.g. after a Redis flush)
+    falls back to the durable ``packages.owner_id`` column so ownership checks stay
+    correct across the durability boundary."""
+    owner = await _redis().get(f"project:{project_id}:owner")
+    if owner:
+        return owner
+    if pg.enabled():
+        try:
+            return await pg.fetch_package_owner(project_id)
+        except Exception:  # noqa: BLE001
+            log.warning("postgres owner-fetch failed for %s", project_id, exc_info=True)
+    return None
+
+
+# --------------------------------------------------------------------------
+# Users (accounts / auth)
+# --------------------------------------------------------------------------
+# Postgres is the durable system of record for accounts when configured (the auth
+# layer requires it in production); the Redis-only branch keeps registration/login
+# working in dev/test (fakeredis) exactly as the package path degrades. Uniqueness is
+# enforced by the Postgres UNIQUE constraint (``UserExistsError``) or, on the Redis
+# branch, an atomic ``SET ... NX`` on the username index key.
+#
+# Keys (Redis branch):
+#   ``user:name:{username}`` -> user_id   (uniqueness index + username lookup)
+#   ``user:id:{user_id}``    -> hash(user_id, username, display_username,
+#                                    password_hash, created_at)
+def _user_hash(
+    user_id: str, username: str, display_username: str, password_hash: str, created_at: str
+) -> dict[str, str]:
+    return {
+        "user_id": user_id,
+        "username": username,
+        "display_username": display_username,
+        "password_hash": password_hash,
+        "created_at": created_at,
+    }
+
+
+async def create_user(
+    user_id: str,
+    username: str,
+    display_username: str,
+    password_hash: str,
+    created_at: str,
+) -> None:
+    """Persist a new account. Raises :class:`UserExistsError` if ``username`` (already
+    normalized/lowercased by the caller) is taken."""
+    if pg.enabled():
+        # Postgres is the source of truth: its UNIQUE constraint is the authority on
+        # duplicates, so the error must propagate (not be swallowed like a mirror).
+        await pg.insert_user(user_id, username, display_username, password_hash)
+        return
+    r = _redis()
+    if not await r.set(f"user:name:{username}", user_id, nx=True):
+        raise UserExistsError(username)
+    await r.hset(
+        f"user:id:{user_id}",
+        mapping=_user_hash(user_id, username, display_username, password_hash, created_at),
+    )
+
+
+async def get_user_by_username(username: str) -> dict[str, str] | None:
+    """Look up an account by its normalized username. Includes ``password_hash`` for
+    the authenticator; callers must never surface it past the auth boundary."""
+    if pg.enabled():
+        row = await pg.fetch_user_by_username(username)
+        return {k: str(v) for k, v in row.items()} if row else None
+    user_id = await _redis().get(f"user:name:{username}")
+    if not user_id:
+        return None
+    return await get_user_by_id(user_id)
+
+
+async def get_user_by_id(user_id: str) -> dict[str, str] | None:
+    if pg.enabled():
+        row = await pg.fetch_user_by_id(user_id)
+        return {k: str(v) for k, v in row.items()} if row else None
+    data = await _redis().hgetall(f"user:id:{user_id}")
+    return data or None
+
+
+async def set_user_password_hash(user_id: str, password_hash: str) -> None:
+    """Update a user's stored password hash (rehash-on-login / password change)."""
+    if pg.enabled():
+        await pg.update_user_password(user_id, password_hash)
+        return
+    await _redis().hset(f"user:id:{user_id}", "password_hash", password_hash)
 
 
 # --------------------------------------------------------------------------
