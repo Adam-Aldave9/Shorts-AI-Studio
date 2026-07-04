@@ -22,7 +22,9 @@ const DURATIONS = [30, 60, 90, 120];
 export default function Submit() {
   const navigate = useNavigate();
   const [premise, setPremise] = useState("");
-  const [duration, setDuration] = useState(90);
+  // Default to 30s: cheapest full end-to-end exercise (~10 shots) for test runs;
+  // bump to 90s for a flagship render once the path is proven.
+  const [duration, setDuration] = useState(30);
   const [style, setStyle] = useState("");
   const [voiceId, setVoiceId] = useState("");
 

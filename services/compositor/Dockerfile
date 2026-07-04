@@ -12,7 +12,7 @@ RUN apt-get update \
 COPY libs/schema /app/libs/schema
 COPY libs/storage /app/libs/storage
 COPY libs/state /app/libs/state
-COPY compositor /app/compositor
+COPY services/compositor /app/compositor
 
 RUN pip install ./libs/schema ./libs/storage ./libs/state ./compositor
 

@@ -2,8 +2,9 @@
 **/*.egg-info
 **/.venv
 **/node_modules
-frontend/dist
+services/frontend/dist
 .git
 .env
 *.png
-notebooks
+docs
+data/notebooks

@@ -12,7 +12,7 @@ from scheduler.dag import Dag
 
 from harness.cli import _latency_weight
 
-FIXTURE = Path(__file__).resolve().parents[2] / "example-packages" / "rainforest-90s.json"
+FIXTURE = Path(__file__).resolve().parents[3] / "data" / "example-packages" / "rainforest-90s.json"
 
 
 def _pkg() -> ProductionPackage:

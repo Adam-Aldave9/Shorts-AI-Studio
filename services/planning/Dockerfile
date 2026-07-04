@@ -11,14 +11,14 @@ ENV PYTHONUNBUFFERED=1 PIP_NO_CACHE_DIR=1
 COPY libs/schema /app/libs/schema
 COPY libs/validator /app/libs/validator
 COPY libs/state /app/libs/state
-COPY planning /app/planning
+COPY services/planning /app/planning
 
 # Data the planning tier reads at runtime: the hand-authored mock package (MOCK /
 # no-key fallback) and the world bible (real-run consistency). The package is
 # installed into site-packages, so graph.py / world.py's parents[2] heuristic does
 # NOT point at /app here — point the documented overrides at where we copy them.
-COPY example-packages /app/example-packages
-COPY world-bibles /app/world-bibles
+COPY data/example-packages /app/example-packages
+COPY data/world-bibles /app/world-bibles
 ENV MOCK_PACKAGE_PATH=/app/example-packages/rainforest-90s.json \
     WORLD_BIBLE_PATH=/app/world-bibles/amazon-rainforest.json
 

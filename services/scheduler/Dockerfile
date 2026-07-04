@@ -8,7 +8,7 @@ COPY libs/schema /app/libs/schema
 COPY libs/validator /app/libs/validator
 COPY libs/rate-limiter /app/libs/rate-limiter
 COPY libs/state /app/libs/state
-COPY scheduler /app/scheduler
+COPY services/scheduler /app/scheduler
 
 RUN pip install ./libs/schema ./libs/validator ./libs/rate-limiter ./libs/state ./scheduler
 

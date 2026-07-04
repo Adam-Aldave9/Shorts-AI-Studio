@@ -5,7 +5,7 @@ descriptions plus the ids of their pre-generated reference images. Its JSON shap
 already matches :class:`schema.World` (the leading ``_comment`` is ignored by
 Pydantic), so loading is a parse + validate.
 
-The path defaults to ``world-bibles/amazon-rainforest.json`` at the repo root and
+The path defaults to ``data/world-bibles/amazon-rainforest.json`` at the repo root and
 is overridable via ``WORLD_BIBLE_PATH`` so the Docker image (item 7) can point at
 wherever it copies the file.
 """
@@ -18,9 +18,9 @@ from pathlib import Path
 
 from schema import World
 
-# planning/planning/world.py -> parents[2] is the repo root.
-_REPO_ROOT = Path(__file__).resolve().parents[2]
-_DEFAULT_WORLD_BIBLE = _REPO_ROOT / "world-bibles" / "amazon-rainforest.json"
+# services/planning/planning/world.py -> parents[3] is the repo root.
+_REPO_ROOT = Path(__file__).resolve().parents[3]
+_DEFAULT_WORLD_BIBLE = _REPO_ROOT / "data" / "world-bibles" / "amazon-rainforest.json"
 
 
 def world_bible_path() -> Path:
