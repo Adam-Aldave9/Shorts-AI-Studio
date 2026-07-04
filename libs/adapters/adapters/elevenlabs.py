@@ -22,16 +22,22 @@ ELEVENLABS_BASE = "https://api.elevenlabs.io/v1"
 # provider_hint suffix -> ElevenLabs model_id.
 # ⚠️ ``multilingual-v3`` maps to the GA ``eleven_multilingual_v2`` (eleven_v3 is
 # not generally available on the standard TTS endpoint); revisit before the real run.
+# ``flash-v2.5`` is the cheap/fast draft model (~half the character cost) — the
+# default for test/non-final runs; switch the node hint to multilingual-v3 for a
+# final quality pass.
 _MODEL_IDS = {
     "multilingual-v3": "eleven_multilingual_v2",
     "multilingual-v2": "eleven_multilingual_v2",
+    "flash-v2.5": "eleven_flash_v2_5",
+    "flash-v2": "eleven_flash_v2",
 }
 _DEFAULT_MODEL_ID = "eleven_multilingual_v2"
 
 # Per-character price (USD). ~$0.30 / 1k chars approximates ElevenLabs' creator
 # tier and yields ~$0.34 for the fixture's ~1.1k-char narration, in line with the
-# spec §13.1 ~$0.40 narration estimate.
+# spec §13.1 ~$0.40 narration estimate. Flash bills at ~half the credit cost.
 _PRICE_PER_CHAR = 0.0003
+_FLASH_PRICE_PER_CHAR = 0.00015
 
 
 class ElevenLabsAdapter:
@@ -70,7 +76,8 @@ class ElevenLabsAdapter:
                 f"elevenlabs HTTP {resp.status_code}: {resp.text[:500]}", transient=transient
             )
 
-        cost = round(len(text) * _PRICE_PER_CHAR, 4)
+        price = _FLASH_PRICE_PER_CHAR if model_id.startswith("eleven_flash") else _PRICE_PER_CHAR
+        cost = round(len(text) * price, 4)
         # The whole asset is already in hand; stash it for fetch_result.
         return JobHandle(
             provider=self.name,

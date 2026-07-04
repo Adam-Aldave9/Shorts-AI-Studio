@@ -25,6 +25,12 @@ MODEL_SCRIPT = "claude-opus-4-8"
 MODEL_BREAKDOWN = "claude-sonnet-4-6"
 MODEL_PROMPTS = "claude-sonnet-4-6"
 
+# Newer Claude models deprecate the ``temperature`` parameter and reject requests
+# that set it (400 invalid_request_error). The agents still express an intended
+# temperature for readability/older models, so we accept it in the signature but
+# only forward it to models that still support it.
+_NO_TEMPERATURE_MODELS = {"claude-opus-4-8"}
+
 # A message is a (role, content) tuple — ``langchain`` accepts these directly, so
 # the agents' ``build_prompt`` functions stay free of any langchain import.
 Messages = Sequence[tuple[str, str]]
@@ -46,5 +52,9 @@ def call_structured(
     """
     from langchain_anthropic import ChatAnthropic
 
-    llm = ChatAnthropic(model=model, temperature=temperature, max_tokens=max_tokens)
+    kwargs: dict = {"model": model, "max_tokens": max_tokens}
+    if model not in _NO_TEMPERATURE_MODELS:
+        kwargs["temperature"] = temperature
+
+    llm = ChatAnthropic(**kwargs)
     return llm.with_structured_output(schema).invoke(list(messages))

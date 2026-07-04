@@ -41,11 +41,13 @@ _DEFAULT_BUDGET = 15.0
 
 _REF_COST = 0.03
 _SHOT_COST_MIN, _SHOT_COST_MAX = 0.05, 0.25
-_VOICEOVER_COST = 0.4
+_VOICEOVER_COST = 0.2  # Flash v2.5 draft model (~half the multilingual line)
 
 _IMAGE_HINT = "fal:flux-schnell"
 _VIDEO_HINT = "fal:pixverse-v6-i2v"
-_VOICEOVER_HINT = "elevenlabs:multilingual-v3"
+# Flash v2.5 is the cheap/fast draft narration model for test/non-final runs.
+# Switch to "elevenlabs:multilingual-v3" (at the Checkpoint, or here) for a final pass.
+_VOICEOVER_HINT = "elevenlabs:flash-v2.5"
 
 
 def _clamp(value: float, lo: float, hi: float) -> float:
