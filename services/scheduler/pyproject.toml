@@ -8,6 +8,7 @@ dependencies = [
     "afp-state",
     "afp-validator",
     "afp-rate-limiter",
+    "afp-auth",
     "fastapi>=0.110",
     "uvicorn[standard]>=0.29",
     "sse-starlette>=2.0",

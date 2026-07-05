@@ -55,15 +55,18 @@ def _run(scenario):
     asyncio.run(wrapper())
 
 
-def test_create_package_persists_and_returns_id():
+def test_create_package_stamps_owner_and_returns_id():
     async def scenario(_client):
-        result = await main.create_package(_pkg())
+        result = await main.create_package(_pkg(), user_id="user_a")
         assert result == {"project_id": "p1"}
 
         # Persisted and readable back through the shared state layer.
         stored = await state.get_package("p1")
         assert stored is not None
         assert [a.node_id for a in stored.assets] == ["ref_a", "shot_a"]
+
+        # Ownership is stamped from the authenticated caller.
+        assert await state.get_project_owner("p1") == "user_a"
 
         # Ingest does not approve — the daemon won't see it until /approve.
         approved = [p.project_id async for p in state.iter_approved_packages()]
@@ -72,7 +75,7 @@ def test_create_package_persists_and_returns_id():
     _run(scenario)
 
 
-def test_list_packages_returns_summaries_newest_first():
+def test_list_packages_is_scoped_to_owner_newest_first():
     async def scenario(client):
         from datetime import datetime, timezone
 
@@ -82,15 +85,19 @@ def test_list_packages_returns_summaries_newest_first():
         newer.project_id = "p2"
         newer.meta.title = "Second"
         newer.created_at = datetime(2026, 2, 1, tzinfo=timezone.utc)
+        other = _pkg()  # owned by a different user — must not appear
+        other.project_id = "p3"
+        other.meta.title = "Someone else's"
 
-        await state.save_package(older)
-        await state.save_package(newer)
+        await state.save_package(older, owner_id="user_a")
+        await state.save_package(newer, owner_id="user_a")
+        await state.save_package(other, owner_id="user_b")
         # p1 has live phase + cost; p2 has neither yet.
         await state.set_project_phase("p1", state.PHASE_COMPLETE)
         await client.set("cost:p1", "1.50")
 
-        summaries = await main.list_packages()
-        assert [s.project_id for s in summaries] == ["p2", "p1"]  # newest first
+        summaries = await main.list_packages(user_id="user_a")
+        assert [s.project_id for s in summaries] == ["p2", "p1"]  # newest first, own only
 
         newest, oldest = summaries
         assert newest.title == "Second"
@@ -100,6 +107,10 @@ def test_list_packages_returns_summaries_newest_first():
         assert oldest.title == "T"
         assert oldest.phase == state.PHASE_COMPLETE
         assert oldest.cost_usd == pytest.approx(1.50)
+
+        # user_b sees only their own package
+        b_summaries = await main.list_packages(user_id="user_b")
+        assert [s.project_id for s in b_summaries] == ["p3"]
 
     _run(scenario)
 

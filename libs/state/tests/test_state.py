@@ -141,3 +141,69 @@ def test_missing_package_and_approve():
         assert await state.approve_package("nope") is False
 
     _run(scenario)
+
+
+# --------------------------------------------------------------------------
+# Ownership (per-user isolation)
+# --------------------------------------------------------------------------
+def test_owner_stamped_and_scoped_history():
+    async def scenario():
+        a = _pkg()  # p_test, owned by user_a
+        b = _pkg()
+        b.project_id = "p_b"
+        await state.save_package(a, owner_id="user_a")
+        await state.save_package(b, owner_id="user_b")
+
+        assert await state.get_project_owner("p_test") == "user_a"
+        assert await state.get_project_owner("p_b") == "user_b"
+        assert await state.get_project_owner("nope") is None
+
+        # each user sees only their own packages
+        a_ids = [p.project_id async for p in state.iter_user_packages("user_a")]
+        b_ids = [p.project_id async for p in state.iter_user_packages("user_b")]
+        assert a_ids == ["p_test"]
+        assert b_ids == ["p_b"]
+
+    _run(scenario)
+
+
+def test_checkpoint_edit_preserves_owner():
+    async def scenario():
+        pkg = _pkg()
+        await state.save_package(pkg, owner_id="user_a")
+        # a later save with no owner_id (a checkpoint edit) must not drop ownership
+        await state.save_package(pkg)
+        assert await state.get_project_owner("p_test") == "user_a"
+
+    _run(scenario)
+
+
+# --------------------------------------------------------------------------
+# Users (accounts / auth) — Redis-only branch
+# --------------------------------------------------------------------------
+def test_create_and_fetch_user():
+    async def scenario():
+        await state.create_user("u_1", "alice", "Alice", "hash_x", "2026-07-04T00:00:00Z")
+
+        by_name = await state.get_user_by_username("alice")
+        assert by_name is not None
+        assert by_name["user_id"] == "u_1"
+        assert by_name["display_username"] == "Alice"
+        assert by_name["password_hash"] == "hash_x"
+
+        by_id = await state.get_user_by_id("u_1")
+        assert by_id["username"] == "alice"
+
+        assert await state.get_user_by_username("nobody") is None
+        assert await state.get_user_by_id("nobody") is None
+
+    _run(scenario)
+
+
+def test_create_user_rejects_duplicate_username():
+    async def scenario():
+        await state.create_user("u_1", "alice", "Alice", "h1", "2026-07-04T00:00:00Z")
+        with pytest.raises(state.UserExistsError):
+            await state.create_user("u_2", "alice", "Alice", "h2", "2026-07-04T00:00:00Z")
+
+    _run(scenario)

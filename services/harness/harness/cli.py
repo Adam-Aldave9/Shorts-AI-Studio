@@ -226,6 +226,66 @@ def _scheduler_base(scheduler_url: str | None) -> str:
     return url.rstrip("/")
 
 
+# --------------------------------------------------------------------------
+# Authentication (the scheduler now requires a session + CSRF on writes)
+# --------------------------------------------------------------------------
+def _allowed_origin() -> str:
+    """The Origin the scheduler's CSRF check will accept. The harness is a trusted
+    first-party client (not a browser), so it presents the configured allowed origin
+    on unsafe requests to satisfy the Origin allow-list."""
+    raw = os.environ.get("AUTH_ALLOWED_ORIGINS", "http://localhost:5173")
+    return raw.replace(",", " ").split()[0].strip().rstrip("/")
+
+
+def _write_headers(csrf_token: str) -> dict[str, str]:
+    """Headers every unsafe (POST/PUT/...) request must carry: the CSRF token echoed
+    from the session cookie, plus an allowed Origin."""
+    return {"X-CSRF-Token": csrf_token, "Origin": _allowed_origin()}
+
+
+def _authenticate(base: str, username: str, password: str, register: bool):
+    """Log in on a persistent client (cookie jar) and return ``(client, csrf_token)``.
+
+    The returned ``httpx.Client`` holds the ``afp_session`` + ``afp_csrf`` cookies, so
+    subsequent calls on it flow the session automatically; the CSRF token is echoed in
+    an ``X-CSRF-Token`` header on writes (see :func:`_write_headers`). With
+    ``register=True`` the account is created first (auto-logged-in), tolerating a 409
+    if it already exists."""
+    import httpx
+
+    if not username or not password:
+        typer.secho(
+            "no credentials: set AFP_USER + AFP_PASSWORD (or pass --user/--password)",
+            fg=typer.colors.RED,
+            err=True,
+        )
+        raise typer.Exit(1)
+
+    client = httpx.Client(timeout=30.0)
+    origin = {"Origin": _allowed_origin()}
+    creds = {"username": username, "password": password}
+    try:
+        if register:
+            resp = client.post(f"{base}/auth/register", json=creds, headers=origin)
+            if resp.status_code == 201:  # created + auto-logged-in
+                return client, client.cookies.get("afp_csrf")
+            if resp.status_code != 409:  # 409 = already exists -> fall through to login
+                resp.raise_for_status()
+        resp = client.post(f"{base}/auth/login", json=creds, headers=origin)
+        resp.raise_for_status()
+    except httpx.HTTPError as exc:
+        client.close()
+        typer.secho(f"login failed: {exc}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(1) from exc
+
+    csrf_token = client.cookies.get("afp_csrf")
+    if not csrf_token:
+        client.close()
+        typer.secho("login succeeded but no CSRF cookie was set", fg=typer.colors.RED, err=True)
+        raise typer.Exit(1)
+    return client, csrf_token
+
+
 @app.command()
 def submit(
     package: Path = typer.Option(..., exists=True, help="Production package JSON to submit."),
@@ -235,33 +295,50 @@ def submit(
     scheduler_url: str = typer.Option(
         None, help="Scheduler base URL (default: $SCHEDULER_URL or http://localhost:8001)."
     ),
+    user: str = typer.Option(
+        None, "--user", envvar="AFP_USER", help="Account username (or $AFP_USER)."
+    ),
+    password: str = typer.Option(
+        None, "--password", envvar="AFP_PASSWORD", help="Account password (or $AFP_PASSWORD)."
+    ),
+    register: bool = typer.Option(
+        False, "--register", help="Create the account first (tolerates already-exists)."
+    ),
 ) -> None:
     """POST a package to the scheduler (and optionally approve it): the entry
-    that kicks the distributed run, the counterpart to ``render-local``."""
+    that kicks the distributed run, the counterpart to ``render-local``.
+
+    The scheduler is behind a login wall, so this logs in first (persistent cookie
+    jar) and threads the session + CSRF token through the writes."""
     import httpx
     from schema import ProductionPackage
 
     pkg = ProductionPackage.model_validate_json(package.read_text())  # fail fast on bad JSON
     base = _scheduler_base(scheduler_url)
+    client, csrf_token = _authenticate(base, user, password, register)
+    headers = {"content-type": "application/json", **_write_headers(csrf_token)}
 
     try:
-        resp = httpx.post(
+        resp = client.post(
             f"{base}/packages",
             content=pkg.model_dump_json(),
-            headers={"content-type": "application/json"},
-            timeout=30.0,
+            headers=headers,
         )
         resp.raise_for_status()
         project_id = resp.json()["project_id"]
         typer.echo(f"submitted {project_id} -> {base}")
 
         if approve:
-            resp = httpx.post(f"{base}/packages/{project_id}/approve", timeout=30.0)
+            resp = client.post(
+                f"{base}/packages/{project_id}/approve", headers=_write_headers(csrf_token)
+            )
             resp.raise_for_status()
             typer.secho(f"approved {project_id} -> daemon will begin dispatch", fg=typer.colors.GREEN)
     except httpx.HTTPError as exc:
         typer.secho(f"submit failed: {exc}", fg=typer.colors.RED, err=True)
         raise typer.Exit(1) from exc
+    finally:
+        client.close()
 
     typer.echo(f"watch: {base}/packages/{project_id}/events")
 
@@ -336,14 +413,22 @@ def _scale_workers(n: int, settle_s: float, ready_timeout_s: float = 60.0) -> No
 
 
 def _run_trial(
-    base: str, package: Path, n: int, trial: int, floor: float, timeout_s: float
+    base: str,
+    package: Path,
+    n: int,
+    trial: int,
+    floor: float,
+    timeout_s: float,
+    client,
+    csrf_token: str,
 ) -> dict:
     """One isolated run at ``n`` workers, stopwatched over SSE.
 
     The ``project_id`` is rewritten to ``p_bench_w{n}_t{trial}`` so each trial is
     independent (no Redis/PG collisions). T0 is approve; the SSE stream is the
     clock: T1 at ``phase == compositing`` (execution fan-out done, excluding the
-    constant compositor tail), end-to-end at ``complete``.
+    constant compositor tail), end-to-end at ``complete``. All calls ride the
+    authenticated ``client`` (session cookie jar) with the CSRF token on writes.
     """
     import httpx
     from state import PHASE_COMPOSITING
@@ -352,16 +437,18 @@ def _run_trial(
     project_id = f"p_bench_w{n}_t{trial}"
     pkg_dict["project_id"] = project_id
     n_nodes = len(pkg_dict.get("assets", []))
+    write_headers = {"content-type": "application/json", **_write_headers(csrf_token)}
 
-    httpx.post(
+    client.post(
         f"{base}/packages",
         content=json.dumps(pkg_dict),
-        headers={"content-type": "application/json"},
-        timeout=30.0,
+        headers=write_headers,
     ).raise_for_status()
 
     t0 = time.monotonic()  # T0 = approve
-    httpx.post(f"{base}/packages/{project_id}/approve", timeout=30.0).raise_for_status()
+    client.post(
+        f"{base}/packages/{project_id}/approve", headers=_write_headers(csrf_token)
+    ).raise_for_status()
 
     exec_t: float | None = None
     total_t: float | None = None
@@ -370,7 +457,7 @@ def _run_trial(
     # Frames arrive every ~1 s (the daemon's SSE generator), so a short read timeout
     # is safe; the per-trial guard below caps the whole run.
     sse_timeout = httpx.Timeout(connect=10.0, read=30.0, write=10.0, pool=10.0)
-    with httpx.stream(
+    with client.stream(
         "GET", f"{base}/packages/{project_id}/events", timeout=sse_timeout
     ) as stream:
         for line in stream.iter_lines():
@@ -445,6 +532,15 @@ def bench(
         5.0, help="Seconds to let freshly-scaled workers connect to the broker before T0."
     ),
     timeout_s: float = typer.Option(1800.0, help="Per-trial wall-clock guard (seconds)."),
+    user: str = typer.Option(
+        None, "--user", envvar="AFP_USER", help="Account username (or $AFP_USER)."
+    ),
+    password: str = typer.Option(
+        None, "--password", envvar="AFP_PASSWORD", help="Account password (or $AFP_PASSWORD)."
+    ),
+    register: bool = typer.Option(
+        False, "--register", help="Create the account first (tolerates already-exists)."
+    ),
     dry_run: bool = typer.Option(
         False, "--dry-run", help="Skip docker scaling + the live run; emit the CSV schema only."
     ),
@@ -475,6 +571,12 @@ def bench(
         f"{', dry-run' if dry_run else ''})"
     )
 
+    # Log in once (dry-run never touches the scheduler, so it needs no session).
+    client = None
+    csrf_token = ""
+    if not dry_run:
+        client, csrf_token = _authenticate(base, user, password, register)
+
     rows: list[dict] = []
     try:
         for n in counts:
@@ -487,7 +589,7 @@ def bench(
                     typer.echo(f"  [dry] w={n} t={trial}")
                     continue
                 typer.echo(f"  running w={n} t={trial} ...")
-                row = _run_trial(base, package, n, trial, floor, timeout_s)
+                row = _run_trial(base, package, n, trial, floor, timeout_s, client, csrf_token)
                 rows.append(row)
                 typer.echo(
                     f"    exec={row['exec_wall_clock_s']}s "
@@ -496,6 +598,8 @@ def bench(
             if not dry_run:  # quiesce the prior count's containers before the next measurement
                 _scale_workers(1, settle_s=0.0)
     finally:
+        if client is not None:
+            client.close()
         pd.DataFrame(rows, columns=_BENCH_COLUMNS).to_csv(out, index=False)
         typer.secho(f"wrote {len(rows)} row(s) -> {out}", fg=typer.colors.GREEN)
 

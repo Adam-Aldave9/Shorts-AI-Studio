@@ -60,6 +60,12 @@ services:
       REDIS_URL: redis://redis:6379/0
       POSTGRES_URL: postgresql://afp:afp@postgres:5432/afp
       MOCK: ${MOCK:-false}
+      # Auth (shared libs/auth). SECRET_KEY is required — compose fails fast if unset.
+      SECRET_KEY: ${SECRET_KEY:?set SECRET_KEY (python -c "import secrets;print(secrets.token_urlsafe(64))")}
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
+      AUTH_ALLOWED_ORIGINS: ${AUTH_ALLOWED_ORIGINS:-http://localhost:5173}
+      SESSION_IDLE_TTL: ${SESSION_IDLE_TTL:-1800}
+      SESSION_ABSOLUTE_TTL: ${SESSION_ABSOLUTE_TTL:-43200}
     ports:
       - "8000:8000"
     depends_on:
@@ -75,6 +81,12 @@ services:
     environment:
       REDIS_URL: redis://redis:6379/0
       POSTGRES_URL: postgresql://afp:afp@postgres:5432/afp
+      # Auth (shared libs/auth). SECRET_KEY is required — compose fails fast if unset.
+      SECRET_KEY: ${SECRET_KEY:?set SECRET_KEY (python -c "import secrets;print(secrets.token_urlsafe(64))")}
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
+      AUTH_ALLOWED_ORIGINS: ${AUTH_ALLOWED_ORIGINS:-http://localhost:5173}
+      SESSION_IDLE_TTL: ${SESSION_IDLE_TTL:-1800}
+      SESSION_ABSOLUTE_TTL: ${SESSION_ABSOLUTE_TTL:-43200}
     ports:
       - "8001:8001"
     depends_on:
