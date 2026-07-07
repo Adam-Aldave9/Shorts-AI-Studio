@@ -19,8 +19,9 @@ from typing import Sequence
 
 from pydantic import BaseModel
 
-# Per-agent model routing. Opus for the open-ended creative step, Sonnet for the
-# two cheaper, more mechanical ones.
+# Per-agent model routing. Opus for the open-ended creative steps (world-building
+# and scripting), Sonnet for the two cheaper, more mechanical ones.
+MODEL_WORLD = "claude-opus-4-8"
 MODEL_SCRIPT = "claude-opus-4-8"
 MODEL_BREAKDOWN = "claude-sonnet-4-6"
 MODEL_PROMPTS = "claude-sonnet-4-6"

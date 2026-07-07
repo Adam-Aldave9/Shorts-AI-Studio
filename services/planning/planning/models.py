@@ -29,7 +29,7 @@ class Scene(BaseModel):
     id: str = Field(description="Stable scene id, e.g. 'scene_01'.")
     heading: str = Field(description="Short slug for the scene, e.g. 'Canopy at dawn'.")
     location: str = Field(
-        description="Where the scene takes place — prefer a world-bible location name."
+        description="Where the scene takes place — prefer a world location name."
     )
     beat: str = Field(description="What the viewer sees: the visual action of the scene.")
     narration: str = Field(
@@ -51,7 +51,7 @@ class Screenplay(BaseModel):
 
 class Shot(BaseModel):
     """One shot derived from a scene. ``location_id`` / ``subject_ids`` reference
-    world-bible entity ids so :mod:`planning.assembly` can resolve the reference
+    world entity ids so :mod:`planning.assembly` can resolve the reference
     images each shot depends on."""
 
     id: str = Field(description="Stable shot id, e.g. 'shot_001'.")
@@ -60,10 +60,10 @@ class Shot(BaseModel):
         description="establishing | wide | aerial | medium | close-up | detail"
     )
     duration_s: float = Field(default=3.0, description="Shot length in seconds (3-5s).")
-    location_id: str = Field(description="World-bible location id, e.g. 'loc_canopy'.")
+    location_id: str = Field(description="World location id, e.g. 'loc_canopy'.")
     subject_ids: list[str] = Field(
         default_factory=list,
-        description="World-bible character ids visible in the shot, e.g. ['char_jaguar'].",
+        description="World character ids visible in the shot, e.g. ['char_jaguar'].",
     )
     action: str = Field(description="The motion/action to animate (drives the i2v prompt).")
 
@@ -78,7 +78,7 @@ class ShotList(BaseModel):
 
 
 class ShotPrompt(BaseModel):
-    """The render-ready prompt for one shot. The prose is where the world bible's
+    """The render-ready prompt for one shot. The prose is where the world's
     ``canonical_description`` strings are woven in — that injection is the
     consistency mechanism (spec §4.1.3)."""
 

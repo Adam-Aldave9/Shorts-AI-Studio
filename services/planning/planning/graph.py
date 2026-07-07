@@ -1,12 +1,12 @@
 """LangGraph wiring for the planning agents (spec §4.2).
 
-    Brief -> Script -> Breakdown -> Prompts -> (validate) -> Package
-                        World bible ----^
+    Brief -> World -> Script -> Breakdown -> Prompts -> (validate) -> Package
 
-A real ``StateGraph`` whose nodes are the three agents (each a pure build/parse
+A real ``StateGraph`` whose nodes are the four agents (each a pure build/parse
 pair over a thin, swappable LLM call) plus a terminal assemble+validate step. The
-world bible is loaded once and threaded through state; the prompts node injects each
-entity's canonical description — the consistency mechanism.
+world agent invents a bespoke cast + set from the brief as the first step, and it
+is threaded through the rest of state; the prompts node injects each entity's
+canonical description — the consistency mechanism.
 
 Mock-first, $0 by default: when ``MOCK=true`` or ``ANTHROPIC_API_KEY`` is unset,
 ``run_planning`` short-circuits to the hand-authored, already-validated
@@ -30,9 +30,8 @@ from typing import TypedDict
 from schema import ProductionPackage, World
 from validator import validate_package
 
-from planning.agents import breakdown, prompts, script
+from planning.agents import breakdown, prompts, script, world
 from planning.assembly import assemble_package
-from planning.world import load_world
 
 log = logging.getLogger("planning")
 
@@ -85,6 +84,9 @@ def _build_graph():
     """
     from langgraph.graph import END, START, StateGraph
 
+    def world_node(state: PlanningState) -> dict:
+        return {"world": world.run(state["brief"])}
+
     def script_node(state: PlanningState) -> dict:
         return {"screenplay": script.run(state["brief"], state["world"])}
 
@@ -108,11 +110,13 @@ def _build_graph():
         return {"package": package}
 
     graph = StateGraph(PlanningState)
+    graph.add_node("world", world_node)
     graph.add_node("script", script_node)
     graph.add_node("breakdown", breakdown_node)
     graph.add_node("prompts", prompts_node)
     graph.add_node("assemble", assemble_node)
-    graph.add_edge(START, "script")
+    graph.add_edge(START, "world")
+    graph.add_edge("world", "script")
     graph.add_edge("script", "breakdown")
     graph.add_edge("breakdown", "prompts")
     graph.add_edge("prompts", "assemble")
@@ -121,10 +125,12 @@ def _build_graph():
 
 
 def _run_chain_sync(brief: dict) -> ProductionPackage:
-    """Run the compiled graph end to end (blocking: real LLM calls)."""
-    world = load_world()
+    """Run the compiled graph end to end (blocking: real LLM calls).
+
+    The world node fills ``state["world"]`` from the brief, so the initial state is
+    just the brief — no preloaded world."""
     compiled = _build_graph()
-    final: PlanningState = compiled.invoke({"brief": brief, "world": world})
+    final: PlanningState = compiled.invoke({"brief": brief})
     return final["package"]
 
 
