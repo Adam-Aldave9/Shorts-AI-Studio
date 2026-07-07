@@ -19,9 +19,10 @@ from validator import validate_package
 
 import state
 from planning import main
-from planning.agents import breakdown, prompts, script
+from planning.agents import breakdown, prompts, script, world
 from planning.assembly import assemble_package
 from planning.graph import _load_mock_package, run_planning
+from planning.llm import MODEL_WORLD
 from planning.models import Screenplay, ShotList, ShotPrompts
 from planning.world import load_world
 
@@ -93,6 +94,74 @@ def _shot_prompts() -> ShotPrompts:
         {"shot_id": "shot_003", "prompt": "Camera rises into a misty canopy.",
          "provider_hint": "fal:pixverse-v6-i2v", "estimated_cost_usd": 0.1},
     ])
+
+
+# --------------------------------------------------------------------------
+# World agent: generated per brief (real-path-only; the mock path is unchanged)
+# --------------------------------------------------------------------------
+def test_world_build_prompt_and_parse():
+    msgs = world.build_prompt(_brief())
+    assert [role for role, _ in msgs] == ["system", "human"]
+    human = msgs[1][1]
+    assert "A short film about a river" in human  # premise
+    assert "flat 2D" in human  # style
+
+    # parse coerces a dict -> World and drops any reference image ids so assembly
+    # mints the canonical ref_{entity.id} nodes.
+    parsed = world.parse({
+        "characters": [{"id": "char_a", "name": "A",
+                        "canonical_description": "desc",
+                        "reference_image_ids": ["should_be_dropped"]}],
+        "locations": [{"id": "loc_a", "name": "L",
+                       "canonical_description": "desc",
+                       "reference_image_ids": ["also_dropped"]}],
+    })
+    assert isinstance(parsed, World)
+    assert all(not e.reference_image_ids
+               for e in (*parsed.characters, *parsed.locations))
+
+
+def test_world_run_uses_injected_call_no_network():
+    captured = {}
+
+    def fake_call(*, model, messages, schema, **kw):
+        captured["model"] = model
+        return _world()
+
+    out = world.run(_brief(), call=fake_call)
+    assert isinstance(out, World)
+    assert captured["model"] == MODEL_WORLD  # per-agent routing
+
+
+def test_world_run_propagates_error():
+    def boom_call(*, model, messages, schema, **kw):
+        raise RuntimeError("world-gen failed")
+
+    # A world-gen failure fails the run — no silent rainforest fallback.
+    with pytest.raises(RuntimeError, match="world-gen failed"):
+        world.run(_brief(), call=boom_call)
+
+
+def test_generated_world_assembles_and_validates():
+    """A generated-world shape (empty reference_image_ids) yields a valid,
+    renderable DAG with one image node per entity."""
+    generated = World(
+        characters=[Character(id="char_keeper", name="The Keeper",
+                              canonical_description="A weathered lighthouse keeper.")],
+        locations=[
+            Location(id="loc_river", name="River",
+                     canonical_description="A wide brown river."),
+            Location(id="loc_canopy", name="Canopy",
+                     canonical_description="A misty canopy."),
+        ],
+    )
+    assert all(not e.reference_image_ids
+               for e in (*generated.characters, *generated.locations))
+
+    pkg = assemble_package(_brief(), generated, _screenplay(), _shot_list(), _shot_prompts())
+    assert validate_package(pkg).ok
+    images = [a for a in pkg.assets if a.type is AssetType.IMAGE]
+    assert len(images) == 3  # one ref image per entity (1 char + 2 locations)
 
 
 # --------------------------------------------------------------------------
@@ -229,7 +298,7 @@ def test_create_brief_persists_and_returns_project_id(monkeypatch):
     asyncio.run(scenario())
 
 
-def test_world_bible_loads_from_disk():
+def test_world_loads_from_disk():
     world = load_world()
     ids = {c.id for c in world.characters} | {l.id for l in world.locations}
     assert "char_jaguar" in ids and "loc_river" in ids

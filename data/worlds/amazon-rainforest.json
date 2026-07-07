@@ -1,5 +1,5 @@
 {
-  "_comment": "Hand-authored world bible for the flagship demo (spec §4.1.4). Canonical character and location descriptions plus pre-generated reference image IDs. The prompts agent injects these canonical_description strings into every relevant shot prompt; that injection is the consistency mechanism (spec §4.1.3). Each reference_image_id corresponds to an `image`-type node in example-packages/rainforest-90s.json. Shape matches schema.World (characters[], locations[]); the leading _comment field is ignored by Pydantic.",
+  "_comment": "Hand-authored world for the flagship demo (spec §4.1.4). Canonical character and location descriptions plus pre-generated reference image IDs. The prompts agent injects these canonical_description strings into every relevant shot prompt; that injection is the consistency mechanism (spec §4.1.3). Each reference_image_id corresponds to an `image`-type node in example-packages/rainforest-90s.json. Shape matches schema.World (characters[], locations[]); the leading _comment field is ignored by Pydantic.",
   "characters": [
     {
       "id": "char_naturalist",

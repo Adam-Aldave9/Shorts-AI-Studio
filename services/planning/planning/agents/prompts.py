@@ -1,4 +1,4 @@
-"""Prompts agent (spec §4.1.3): shot list + world bible -> per-shot prompts.
+"""Prompts agent (spec §4.1.3): shot list + world -> per-shot prompts.
 
 For each shot it writes a vivid image-to-video prompt with the
 ``canonical_description`` of every entity in frame woven in. That injection is the

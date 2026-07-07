@@ -2,7 +2,7 @@
 
 Decomposes each scene into short shots, sizing the shot count from the target
 duration at 3-5 s/shot (90 s / 3 s ~= 30 shots). Every shot is tagged with a
-world-bible ``location_id`` and the ``subject_ids`` of any characters in frame, so
+world ``location_id`` and the ``subject_ids`` of any characters in frame, so
 :mod:`planning.assembly` can resolve the reference images the shot depends on. The
 continuation edges (shot_n -> shot_{n-1}) are derived deterministically in assembly
 from adjacency, not asked of the model.
@@ -23,7 +23,7 @@ SYSTEM = (
     "shot is 3 to 5 seconds and shows one clear action. Cover every scene, in order, "
     "and split a scene into several shots when its beat needs it. Tag each shot with "
     "exactly one location_id and the subject_ids of any characters in frame, using "
-    "ONLY the world-bible ids you are given. Hit the requested shot count closely so "
+    "ONLY the world ids you are given. Hit the requested shot count closely so "
     "the shots' durations sum to the target. Return only the structured shot list."
 )
 
@@ -52,7 +52,7 @@ def build_prompt(brief: dict, screenplay: Screenplay, world: World) -> Messages:
     human = (
         f"Target duration: {duration:.0f} seconds.\n"
         f"Produce about {n_shots} shots (~{_SECONDS_PER_SHOT:.0f}s each), in order.\n\n"
-        f"World-bible ids (use these exact ids for location_id / subject_ids):\n"
+        f"World ids (use these exact ids for location_id / subject_ids):\n"
         f"{_world_lines(world)}\n\n"
         f"Screenplay: {screenplay.title}\nScenes:\n{_scene_lines(screenplay)}\n\n"
         "Break the screenplay into the shot list. For each shot give a stable id "

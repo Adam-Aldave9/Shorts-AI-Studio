@@ -1,7 +1,7 @@
 """Script agent (spec §4.1.1): brief -> screenplay.
 
 Turns a one-line premise into scenes with beats and voiceover narration, written
-around the fixed cast and locations of the world bible so the downstream breakdown
+around the fixed cast and locations of the world so the downstream breakdown
 can map every shot onto a known entity. Narration is voiceover text spoken over the
 footage — never on-screen dialogue.
 """
@@ -39,7 +39,7 @@ def build_prompt(brief: dict, world: World) -> Messages:
         f"Premise:\n{brief['premise']}\n\n"
         f"Target duration: {duration:.0f} seconds.\n"
         f"Visual style: {style}.\n\n"
-        f"Available world bible:\n{_world_lines(world)}\n\n"
+        f"Available world (fixed cast and locations):\n{_world_lines(world)}\n\n"
         "Write the screenplay: a title, a logline, and an ordered list of scenes. "
         "Each scene needs a heading, the location it plays in, the visual beat, and "
         "its narration line."
