@@ -1,0 +1,151 @@
+# AI Film Pipeline — LOCAL LIVE-RELOAD overrides.
+#
+# Compose loads this file automatically on top of docker-compose.yml, so a plain
+# `docker compose up` gives you hot-reload on every service. Edit a .py / .tsx file
+# on the host and the affected container restarts (or HMR-patches) itself — no
+# rebuild, no `--build`.
+#
+# How it works (nothing here touches a Dockerfile, so it runs against your EXISTING
+# images):
+#   * Each service's source is bind-mounted from the host into the container.
+#   * PYTHONPATH points at those mounted dirs so they SHADOW the non-editable
+#     `pip install`ed copies baked into site-packages — the mount becomes the code
+#     that actually runs.
+#   * The start command is swapped for a file-watching reloader.
+#
+# Windows gotcha: Docker Desktop does NOT forward host filesystem events into the
+# Linux VM, so naive inotify watchers never fire. Every watcher below is therefore
+# forced into POLLING mode (WATCHFILES_FORCE_POLLING / Vite usePolling). That is the
+# one thing that makes reload actually work on this machine.
+#
+# To run the PROD-like stack instead (baked images, nginx frontend, no reload):
+#   docker compose -f docker-compose.yml up          # ignore this override entirely
+#   docker compose --profile preview up frontend     # the real nginx image on :5173
+
+services:
+  # ---- Planning (FastAPI / uvicorn) ----------------------------------------
+  planning:
+    environment:
+      # Mounted source wins over the site-packages install (PYTHONPATH precedes it).
+      PYTHONPATH: /app/planning:/app/libs/schema:/app/libs/validator:/app/libs/rate-limiter:/app/libs/state:/app/libs/auth
+      # inotify is dead across the Windows bind mount -> poll instead.
+      WATCHFILES_FORCE_POLLING: "true"
+    volumes:
+      - ./services/planning:/app/planning
+      - ./libs/schema:/app/libs/schema
+      - ./libs/validator:/app/libs/validator
+      - ./libs/rate-limiter:/app/libs/rate-limiter
+      - ./libs/state:/app/libs/state
+      - ./libs/auth:/app/libs/auth
+      # Data the planning tier reads at runtime — mount so edits to the mock package
+      # / world land without a rebuild (read per-request, so no reload needed).
+      - ./data/example-packages:/app/example-packages
+      - ./data/worlds:/app/worlds
+    # uvicorn[standard] already ships watchfiles, so --reload works with no install.
+    command:
+      - uvicorn
+      - planning.main:app
+      - --host=0.0.0.0
+      - --port=8000
+      - --reload
+      - --reload-dir=/app/planning
+      - --reload-dir=/app/libs
+
+  # ---- Scheduler (FastAPI / uvicorn + async DAG daemon) --------------------
+  scheduler:
+    environment:
+      PYTHONPATH: /app/scheduler:/app/libs/schema:/app/libs/validator:/app/libs/rate-limiter:/app/libs/state:/app/libs/auth
+      WATCHFILES_FORCE_POLLING: "true"
+    volumes:
+      - ./services/scheduler:/app/scheduler
+      - ./libs/schema:/app/libs/schema
+      - ./libs/validator:/app/libs/validator
+      - ./libs/rate-limiter:/app/libs/rate-limiter
+      - ./libs/state:/app/libs/state
+      - ./libs/auth:/app/libs/auth
+    command:
+      - uvicorn
+      - scheduler.main:app
+      - --host=0.0.0.0
+      - --port=8001
+      - --reload
+      - --reload-dir=/app/scheduler
+      - --reload-dir=/app/libs
+
+  # ---- Worker (Celery) ------------------------------------------------------
+  # Celery has no built-in reload, so we wrap it in `watchfiles`, which restarts the
+  # worker on any .py change. watchfiles isn't in this image (no uvicorn), so we pip
+  # install it at start — a couple of seconds on `up`, never on a code change.
+  worker:
+    environment:
+      PYTHONPATH: /app/worker:/app/libs/schema:/app/libs/adapters:/app/libs/rate-limiter:/app/libs/storage:/app/libs/state
+      WATCHFILES_FORCE_POLLING: "true"
+    volumes:
+      - ./services/worker:/app/worker
+      - ./libs/schema:/app/libs/schema
+      - ./libs/adapters:/app/libs/adapters
+      - ./libs/rate-limiter:/app/libs/rate-limiter
+      - ./libs/storage:/app/libs/storage
+      - ./libs/state:/app/libs/state
+    # $$ escapes compose interpolation so the CONTAINER's WORKER_CONCURRENCY (set with
+    # a default of 4 in the base file) is what the shell expands.
+    command:
+      - sh
+      - -c
+      - >
+        pip install --quiet --disable-pip-version-check watchfiles &&
+        exec watchfiles --filter python
+        "celery -A worker.celery_app worker --loglevel=info --queues=render --concurrency=$${WORKER_CONCURRENCY:-4}"
+        /app/worker /app/libs
+
+  # ---- Compositor (Celery, single instance) --------------------------------
+  compositor:
+    environment:
+      PYTHONPATH: /app/compositor:/app/libs/schema:/app/libs/storage:/app/libs/state
+      WATCHFILES_FORCE_POLLING: "true"
+    volumes:
+      - ./services/compositor:/app/compositor
+      - ./libs/schema:/app/libs/schema
+      - ./libs/storage:/app/libs/storage
+      - ./libs/state:/app/libs/state
+    command:
+      - sh
+      - -c
+      - >
+        pip install --quiet --disable-pip-version-check watchfiles &&
+        exec watchfiles --filter python
+        "celery -A compositor.celery_app worker --loglevel=info --queues=composite --concurrency=1"
+        /app/compositor /app/libs
+
+  # ---- Frontend -------------------------------------------------------------
+  # The base `frontend` service is the PROD image (Vite build -> nginx). Hide it
+  # behind a profile so a plain `docker compose up` doesn't start it (and doesn't
+  # squat on :5173); bring it back for a prod preview with `--profile preview`.
+  frontend:
+    profiles: ["preview"]
+
+  # Dev frontend: a real Vite dev server with HMR, same :5173, same /api/* reverse
+  # proxy (Vite's proxy mirrors nginx). node_modules lives in a named volume so the
+  # container's Linux-native deps never collide with a host-side install.
+  frontend-dev:
+    image: node:22-slim
+    working_dir: /app
+    command: sh -c "npm install && npm run dev"
+    environment:
+      # In-container the APIs are reachable by compose service name, not localhost;
+      # vite.config.ts reads these (defaulting to localhost for host-side `npm run dev`).
+      PLANNING_PROXY_TARGET: http://planning:8000
+      SCHEDULER_PROXY_TARGET: http://scheduler:8001
+      # Poll for file changes — inotify doesn't cross the Windows bind mount.
+      VITE_USE_POLLING: "true"
+    volumes:
+      - ./services/frontend:/app
+      - frontend_node_modules:/app/node_modules
+    ports:
+      - "5173:5173"
+    depends_on:
+      - planning
+      - scheduler
+
+volumes:
+  frontend_node_modules:
