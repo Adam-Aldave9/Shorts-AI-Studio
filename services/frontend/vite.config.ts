@@ -20,6 +20,10 @@ export default defineConfig({
         target: "http://localhost:8000",
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/api\/planning/, ""),
+        // Keep the planning-job SSE stream (/jobs/{id}/events) flowing in dev.
+        configure: (proxy) => {
+          proxy.on("proxyReq", (proxyReq) => proxyReq.setHeader("connection", "keep-alive"));
+        },
       },
       "/api/scheduler": {
         target: "http://localhost:8001",
