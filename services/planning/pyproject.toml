@@ -10,6 +10,7 @@ dependencies = [
     "afp-auth",
     "fastapi>=0.110",
     "uvicorn[standard]>=0.29",
+    "sse-starlette>=2.0",
     "langgraph>=0.2",
     "langchain>=0.2",
     "langchain-anthropic>=0.1",

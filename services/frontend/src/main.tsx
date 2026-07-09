@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { RouterProvider, createBrowserRouter, Navigate } from "react-router-dom";
 import App from "@/App";
 import Submit from "@/routes/Submit";
+import Planning from "@/routes/Planning";
 import Checkpoint from "@/routes/Checkpoint";
 import Status from "@/routes/Status";
 import Result from "@/routes/Result";
@@ -30,6 +31,7 @@ const router = createBrowserRouter([
         children: [
           { index: true, element: <Navigate to="/submit" replace /> },
           { path: "submit", element: <Submit /> },
+          { path: "planning/:jobId", element: <Planning /> },
           { path: "checkpoint/:projectId", element: <Checkpoint /> },
           { path: "status/:projectId", element: <Status /> },
           { path: "result/:projectId", element: <Result /> },

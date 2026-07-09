@@ -207,3 +207,48 @@ def test_create_user_rejects_duplicate_username():
             await state.create_user("u_2", "alice", "Alice", "h2", "2026-07-04T00:00:00Z")
 
     _run(scenario)
+
+
+# --------------------------------------------------------------------------
+# Planning jobs (transient, Redis-only)
+# --------------------------------------------------------------------------
+def test_plan_job_lifecycle_success():
+    async def scenario():
+        assert await state.get_plan_job("j_x") is None  # unknown -> None
+
+        await state.create_plan_job("j_x", owner_id="user_a")
+        frame = await state.get_plan_job("j_x")
+        assert frame == {
+            "job_id": "j_x",
+            "status": state.PLAN_QUEUED,
+            "stage": None,
+            "project_id": None,
+            "errors": None,
+        }
+        assert await state.get_plan_job_owner("j_x") == "user_a"
+
+        await state.set_plan_stage("j_x", "script")
+        frame = await state.get_plan_job("j_x")
+        assert frame["status"] == state.PLAN_RUNNING
+        assert frame["stage"] == "script"
+
+        await state.set_plan_succeeded("j_x", "p_123")
+        frame = await state.get_plan_job("j_x")
+        assert frame["status"] == state.PLAN_SUCCEEDED
+        assert frame["project_id"] == "p_123"
+
+    _run(scenario)
+
+
+def test_plan_job_failed_carries_errors():
+    async def scenario():
+        await state.create_plan_job("j_y", owner_id="user_b")
+        await state.set_plan_failed("j_y", ["bad rule", "another"])
+        frame = await state.get_plan_job("j_y")
+        assert frame["status"] == state.PLAN_FAILED
+        assert frame["errors"] == ["bad rule", "another"]
+
+        # owner check is scoped: a miss returns None (backs the 404 in owned_job)
+        assert await state.get_plan_job_owner("nope") is None
+
+    _run(scenario)

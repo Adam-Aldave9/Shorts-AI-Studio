@@ -12,7 +12,13 @@ hashing, and a per-session CSRF synchronizer token. See the module docstrings fo
 security rationale of each piece.
 """
 
-from auth.deps import OwnedPackage, current_user, current_user_id, owned_package
+from auth.deps import (
+    OwnedPackage,
+    current_user,
+    current_user_id,
+    owned_job,
+    owned_package,
+)
 from auth.middleware import AuthMiddleware, install_auth
 from auth.router import router as auth_router
 
@@ -23,5 +29,6 @@ __all__ = [
     "current_user",
     "current_user_id",
     "owned_package",
+    "owned_job",
     "OwnedPackage",
 ]

@@ -51,5 +51,18 @@ async def owned_package(project_id: str, request: Request) -> str:
     return project_id
 
 
+async def owned_job(job_id: str, request: Request) -> str:
+    """Guard a per-job route (the planning SSE stream): the caller must own ``job_id``.
+
+    Mirrors :func:`owned_package` — returns **404** for a job the caller doesn't own,
+    or one that doesn't exist / has expired, so the response never reveals which job
+    ids exist to a non-owner."""
+    user_id = current_user_id(request)
+    owner = await state.get_plan_job_owner(job_id)
+    if owner is None or owner != user_id:
+        raise HTTPException(status_code=404, detail="job not found")
+    return job_id
+
+
 # A ready-to-use dependency object for `= Depends(...)` defaults.
 OwnedPackage = Depends(owned_package)

@@ -1,5 +1,6 @@
 // Submit screen (spec §9.2): premise + duration + style + voice -> POST /briefs.
-// On 201 the planning tier has persisted a package; route to its checkpoint.
+// On 202 the planning tier has accepted an async job; route to /planning/:jobId to
+// follow its progress, which redirects to the checkpoint when the package is ready.
 
 import { useState, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
@@ -30,7 +31,7 @@ export default function Submit() {
 
   const mutation = useMutation({
     mutationFn: (brief: Brief) => submitBrief(brief),
-    onSuccess: (accepted) => navigate(`/checkpoint/${accepted.project_id}`),
+    onSuccess: (accepted) => navigate(`/planning/${accepted.job_id}`),
   });
 
   function onSubmit(event: FormEvent) {
