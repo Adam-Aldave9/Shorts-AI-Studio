@@ -6,7 +6,7 @@ import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { openEvents, type StatusEvent } from "@/api/client";
 import { formatDuration, formatUsd } from "@/lib/format";
-import { PhaseBadge, Spinner, StatusBadge, Stat } from "@/components/ui";
+import { PhaseBadge, Spinner, StatusBadge, Stat, SuccessBanner } from "@/components/ui";
 
 function countByStatus(event: StatusEvent, status: string): number {
   return Object.values(event.nodes).filter((node) => node.status === status).length;
@@ -37,6 +37,8 @@ export default function Status() {
   if (!event) return <Spinner label="Connecting to run..." />;
 
   const nodes = Object.entries(event.nodes);
+  const done = countByStatus(event, "succeeded");
+  const pct = nodes.length ? `${Math.round((done / nodes.length) * 100)}%` : "0%";
 
   return (
     <div>
@@ -45,7 +47,7 @@ export default function Status() {
           <h1 className="text-2xl font-semibold">Execution</h1>
           <PhaseBadge phase={event.phase} />
         </div>
-        <p className="font-mono text-xs text-neutral-400">{event.project_id}</p>
+        <p className="font-mono text-xs text-fg-subtle">{event.project_id}</p>
       </div>
 
       <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
@@ -61,26 +63,35 @@ export default function Status() {
         <Stat label="Failed" value={countByStatus(event, "failed") + countByStatus(event, "dead-lettered")} />
       </div>
 
+      <div className="mt-4 h-1.5 overflow-hidden rounded-full bg-surface-overlay">
+        <div
+          className="h-full rounded-full bg-accent transition-all duration-500"
+          style={{ width: pct }}
+        />
+      </div>
+
       {event.complete && (
-        <div className="mt-4 rounded-md border border-green-300 bg-green-50 px-4 py-2 text-sm text-green-800">
-          Render complete - opening the result...{" "}
-          <Link className="font-medium underline" to={`/result/${projectId}`}>
-            view now
-          </Link>
+        <div className="mt-4">
+          <SuccessBanner>
+            Render complete - opening the result...{" "}
+            <Link className="font-medium underline" to={`/result/${projectId}`}>
+              view now
+            </Link>
+          </SuccessBanner>
         </div>
       )}
 
       <div className="mt-6 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
         {nodes.map(([nodeId, node]) => (
-          <div key={nodeId} className="rounded-md border bg-white px-3 py-2">
+          <div key={nodeId} className="rounded-md border bg-surface-raised px-3 py-2">
             <div className="flex items-center justify-between gap-2">
-              <span className="truncate font-mono text-xs text-neutral-600">{nodeId}</span>
+              <span className="truncate font-mono text-xs text-fg-muted">{nodeId}</span>
               <StatusBadge status={node.status} />
             </div>
             {node.attempts > 1 && (
-              <div className="mt-1 text-xs text-neutral-400">attempts: {node.attempts}</div>
+              <div className="mt-1 text-xs text-fg-subtle">attempts: {node.attempts}</div>
             )}
-            {node.error && <div className="mt-1 text-xs text-red-600">{node.error}</div>}
+            {node.error && <div className="mt-1 text-xs text-danger">{node.error}</div>}
           </div>
         ))}
       </div>

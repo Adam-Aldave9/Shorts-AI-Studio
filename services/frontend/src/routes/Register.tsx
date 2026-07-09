@@ -7,6 +7,7 @@ import { useMemo, useState, type FormEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "@/auth/AuthContext";
 import { Button, Card, ErrorBanner, Field, controlClass } from "@/components/ui";
+import { Logo } from "@/components/Logo";
 
 const USERNAME_RE = /^[a-zA-Z0-9_.-]+$/;
 
@@ -65,8 +66,11 @@ export default function Register() {
 
   return (
     <div className="mx-auto flex min-h-screen max-w-md flex-col justify-center px-6">
+      <Link to="/" className="mb-6">
+        <Logo withWordmark />
+      </Link>
       <h1 className="text-2xl font-semibold">Create an account</h1>
-      <p className="mt-1 text-sm text-neutral-500">
+      <p className="mt-1 text-sm text-fg-muted">
         Sign up to submit briefs and manage your own runs.
       </p>
 
@@ -77,6 +81,7 @@ export default function Register() {
               className={controlClass}
               value={username}
               autoComplete="username"
+              autoFocus
               onChange={(event) => setUsername(event.target.value)}
             />
           </Field>
@@ -100,7 +105,7 @@ export default function Register() {
           </Field>
 
           {clientError && (
-            <div className="rounded-md border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+            <div className="rounded-md border border-warning/30 bg-warning/10 px-4 py-3 text-sm text-warning">
               {clientError}
             </div>
           )}
@@ -112,9 +117,9 @@ export default function Register() {
         </form>
       </Card>
 
-      <p className="mt-4 text-center text-sm text-neutral-500">
+      <p className="mt-4 text-center text-sm text-fg-muted">
         Already have an account?{" "}
-        <Link className="font-medium text-neutral-900 hover:underline" to="/login">
+        <Link className="font-medium text-accent-soft hover:text-accent hover:underline" to="/login">
           Sign in
         </Link>
       </p>

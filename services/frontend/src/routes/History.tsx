@@ -41,9 +41,9 @@ export default function History() {
         )}
 
         {query.data && query.data.length > 0 && (
-          <div className="overflow-hidden rounded-lg border bg-white">
+          <div className="overflow-hidden rounded-xl border bg-surface-raised">
             <table className="w-full text-left text-sm">
-              <thead className="bg-neutral-50 text-xs uppercase tracking-wide text-neutral-500">
+              <thead className="bg-surface-overlay text-xs uppercase tracking-wide text-fg-subtle">
                 <tr>
                   <th className="px-4 py-2 font-medium">Title</th>
                   <th className="px-4 py-2 font-medium">Created</th>
@@ -55,14 +55,14 @@ export default function History() {
                 {query.data.map((summary) => (
                   <tr
                     key={summary.project_id}
-                    className="cursor-pointer border-t hover:bg-neutral-50"
+                    className="cursor-pointer border-t transition-colors hover:bg-surface-overlay/50"
                     onClick={() => navigate(destination(summary))}
                   >
                     <td className="px-4 py-3">
-                      <div className="font-medium text-neutral-900">{summary.title}</div>
-                      <div className="font-mono text-xs text-neutral-400">{summary.project_id}</div>
+                      <div className="font-medium text-fg">{summary.title}</div>
+                      <div className="font-mono text-xs text-fg-subtle">{summary.project_id}</div>
                     </td>
-                    <td className="px-4 py-3 text-neutral-600" title={formatDateTime(summary.created_at)}>
+                    <td className="px-4 py-3 text-fg-muted" title={formatDateTime(summary.created_at)}>
                       {relativeTime(summary.created_at)}
                     </td>
                     <td className="px-4 py-3">

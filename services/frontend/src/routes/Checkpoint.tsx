@@ -20,7 +20,7 @@ import {
 } from "@/api/client";
 import { estimatedTotalUsd, shotDurationS, videoShots, voiceovers } from "@/lib/package";
 import { formatDuration, formatUsd } from "@/lib/format";
-import { Button, Card, ErrorBanner, Spinner, Stat } from "@/components/ui";
+import { Button, Card, ErrorBanner, Spinner, Stat, SuccessBanner } from "@/components/ui";
 
 // Monaco's JSON `jsonDefaults` is not surfaced by the loader's slim types (the
 // monaco-editor package types aren't resolved), so narrow to just what we call.
@@ -109,7 +109,7 @@ export default function Checkpoint() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold">{pkg.meta.title}</h1>
-          <p className="font-mono text-xs text-neutral-400">{pkg.project_id}</p>
+          <p className="font-mono text-xs text-fg-subtle">{pkg.project_id}</p>
         </div>
         <div className="flex items-center gap-2">
           <Button variant="danger" onClick={() => navigate("/history")} disabled={busy}>
@@ -135,31 +135,31 @@ export default function Checkpoint() {
 
           <Card>
             <dl className="grid grid-cols-3 gap-y-2 text-sm">
-              <dt className="text-neutral-500">Duration</dt>
+              <dt className="text-fg-subtle">Duration</dt>
               <dd className="col-span-2">{formatDuration(pkg.meta.target_duration_s)}</dd>
-              <dt className="text-neutral-500">Style</dt>
+              <dt className="text-fg-subtle">Style</dt>
               <dd className="col-span-2">{pkg.meta.style}</dd>
-              <dt className="text-neutral-500">Aspect</dt>
+              <dt className="text-fg-subtle">Aspect</dt>
               <dd className="col-span-2">{pkg.meta.aspect_ratio}</dd>
-              <dt className="text-neutral-500">Premise</dt>
-              <dd className="col-span-2 text-neutral-700">{pkg.meta.premise}</dd>
+              <dt className="text-fg-subtle">Premise</dt>
+              <dd className="col-span-2 text-fg-muted">{pkg.meta.premise}</dd>
             </dl>
           </Card>
 
           {narration && (
             <Card>
-              <div className="text-xs uppercase tracking-wide text-neutral-500">Narration</div>
-              <p className="mt-2 whitespace-pre-wrap text-sm text-neutral-700">{narration}</p>
+              <div className="text-xs uppercase tracking-wide text-fg-subtle">Narration</div>
+              <p className="mt-2 whitespace-pre-wrap text-sm text-fg-muted">{narration}</p>
             </Card>
           )}
 
-          <div className="overflow-hidden rounded-lg border bg-white shadow-sm">
-            <div className="border-b px-4 py-2 text-xs uppercase tracking-wide text-neutral-500">
+          <div className="overflow-hidden rounded-xl border bg-surface-raised">
+            <div className="bg-surface-overlay px-4 py-2 text-xs uppercase tracking-wide text-fg-subtle">
               Shot list
             </div>
             <div className="max-h-80 overflow-auto">
               <table className="w-full text-left text-sm">
-                <thead className="sticky top-0 bg-neutral-50 text-xs uppercase tracking-wide text-neutral-500">
+                <thead className="sticky top-0 bg-surface-overlay text-xs uppercase tracking-wide text-fg-subtle">
                   <tr>
                     <th className="px-4 py-2 font-medium">Node</th>
                     <th className="px-4 py-2 font-medium">Prompt</th>
@@ -170,11 +170,11 @@ export default function Checkpoint() {
                 <tbody>
                   {shots.map((shot) => (
                     <tr key={shot.node_id} className="border-t align-top">
-                      <td className="px-4 py-2 font-mono text-xs text-neutral-500">{shot.node_id}</td>
-                      <td className="px-4 py-2 text-neutral-700">
+                      <td className="px-4 py-2 font-mono text-xs text-fg-subtle">{shot.node_id}</td>
+                      <td className="px-4 py-2 text-fg-muted">
                         <div className="line-clamp-2">{shot.prompt ?? "-"}</div>
                         {shot.provider_hint && (
-                          <div className="font-mono text-[10px] text-neutral-400">
+                          <div className="font-mono text-[10px] text-fg-subtle">
                             {shot.provider_hint}
                           </div>
                         )}
@@ -203,11 +203,9 @@ export default function Checkpoint() {
             <ErrorBanner title="Could not approve" error={approveMutation.error} />
           )}
           {saveMutation.isSuccess && !saveMutation.isPending && (
-            <div className="rounded-md border border-green-300 bg-green-50 px-4 py-2 text-sm text-green-800">
-              Saved and re-validated.
-            </div>
+            <SuccessBanner>Saved and re-validated.</SuccessBanner>
           )}
-          <div className="overflow-hidden rounded-lg border">
+          <div className="overflow-hidden rounded-xl border">
             <Editor
               height="70vh"
               defaultLanguage="json"

@@ -1,8 +1,9 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { RouterProvider, createBrowserRouter, Navigate } from "react-router-dom";
+import { RouterProvider, createBrowserRouter } from "react-router-dom";
 import App from "@/App";
+import Landing from "@/marketing/Landing";
 import Submit from "@/routes/Submit";
 import Checkpoint from "@/routes/Checkpoint";
 import Status from "@/routes/Status";
@@ -12,28 +13,28 @@ import Login from "@/routes/Login";
 import Register from "@/routes/Register";
 import { AuthProvider } from "@/auth/AuthContext";
 import ProtectedRoute from "@/auth/ProtectedRoute";
+import "@fontsource-variable/inter";
 import "@/index.css";
 
 const queryClient = new QueryClient();
 
 const router = createBrowserRouter([
-  // Public auth routes (outside the protected shell).
+  { path: "/", element: <Landing /> }, // public landing
   { path: "/login", element: <Login /> },
   { path: "/register", element: <Register /> },
-  // Everything else requires a session: ProtectedRoute gates the App shell.
+  // Everything else requires a session. The wrappers are pathless so `/` matches
+  // only Landing while all app URLs stay identical (deep links, login `from`).
   {
     element: <ProtectedRoute />,
     children: [
       {
-        path: "/",
         element: <App />,
         children: [
-          { index: true, element: <Navigate to="/submit" replace /> },
-          { path: "submit", element: <Submit /> },
-          { path: "checkpoint/:projectId", element: <Checkpoint /> },
-          { path: "status/:projectId", element: <Status /> },
-          { path: "result/:projectId", element: <Result /> },
-          { path: "history", element: <History /> },
+          { path: "/submit", element: <Submit /> },
+          { path: "/checkpoint/:projectId", element: <Checkpoint /> },
+          { path: "/status/:projectId", element: <Status /> },
+          { path: "/result/:projectId", element: <Result /> },
+          { path: "/history", element: <History /> },
         ],
       },
     ],

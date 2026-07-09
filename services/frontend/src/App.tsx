@@ -1,9 +1,10 @@
-import { NavLink, Outlet, useNavigate } from "react-router-dom";
+import { Link, NavLink, Outlet, useNavigate } from "react-router-dom";
 import { useAuth } from "@/auth/AuthContext";
 import { Button } from "@/components/ui";
+import { Logo } from "@/components/Logo";
 
 const navLinkClass = ({ isActive }: { isActive: boolean }) =>
-  isActive ? "font-medium text-neutral-900" : "text-neutral-600 hover:text-neutral-900";
+  isActive ? "font-medium text-fg" : "text-fg-muted hover:text-fg";
 
 // Shell for the internal tool (spec §9).
 export default function App() {
@@ -12,14 +13,16 @@ export default function App() {
 
   async function onLogout() {
     await logout();
-    navigate("/login", { replace: true });
+    navigate("/", { replace: true });
   }
 
   return (
-    <div className="min-h-screen bg-neutral-50 text-neutral-900">
-      <header className="border-b bg-white">
+    <div className="min-h-screen">
+      <header className="sticky top-0 z-10 border-b border-border bg-surface/80 backdrop-blur">
         <nav className="mx-auto flex max-w-5xl items-center gap-6 px-6 py-3 text-sm">
-          <span className="font-semibold">AI Film Pipeline</span>
+          <Link to="/">
+            <Logo withWordmark />
+          </Link>
           <NavLink className={navLinkClass} to="/submit">
             Submit
           </NavLink>
@@ -27,7 +30,7 @@ export default function App() {
             History
           </NavLink>
           <div className="ml-auto flex items-center gap-3">
-            {user && <span className="text-neutral-600">{user.username}</span>}
+            {user && <span className="hidden text-fg-subtle sm:inline">{user.username}</span>}
             <Button variant="ghost" onClick={onLogout}>
               Log out
             </Button>
