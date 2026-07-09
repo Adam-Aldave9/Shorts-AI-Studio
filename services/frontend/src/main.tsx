@@ -5,6 +5,7 @@ import { RouterProvider, createBrowserRouter } from "react-router-dom";
 import App from "@/App";
 import Landing from "@/marketing/Landing";
 import Submit from "@/routes/Submit";
+import Planning from "@/routes/Planning";
 import Checkpoint from "@/routes/Checkpoint";
 import Status from "@/routes/Status";
 import Result from "@/routes/Result";
@@ -30,11 +31,13 @@ const router = createBrowserRouter([
       {
         element: <App />,
         children: [
-          { path: "/submit", element: <Submit /> },
-          { path: "/checkpoint/:projectId", element: <Checkpoint /> },
-          { path: "/status/:projectId", element: <Status /> },
-          { path: "/result/:projectId", element: <Result /> },
-          { path: "/history", element: <History /> },
+          { index: true, element: <Navigate to="/submit" replace /> },
+          { path: "submit", element: <Submit /> },
+          { path: "planning/:jobId", element: <Planning /> },
+          { path: "checkpoint/:projectId", element: <Checkpoint /> },
+          { path: "status/:projectId", element: <Status /> },
+          { path: "result/:projectId", element: <Result /> },
+          { path: "history", element: <History /> },
         ],
       },
     ],

@@ -15,7 +15,6 @@ export const SCHEDULER_URL = import.meta.env.VITE_SCHEDULER_URL ?? "/api/schedul
 
 // --- Generated model types, re-exported for the screens to consume ---
 export type Brief = PlanningComponents["schemas"]["Brief"];
-export type BriefAccepted = PlanningComponents["schemas"]["BriefAccepted"];
 export type ProductionPackage = SchedulerComponents["schemas"]["ProductionPackage"];
 export type PackageSummary = SchedulerComponents["schemas"]["PackageSummary"];
 export type Asset = SchedulerComponents["schemas"]["Asset"];
@@ -129,8 +128,15 @@ export function fetchCsrf(): Promise<{ csrf: string | null }> {
 
 // --- Planning service: Submit + the Monaco JSON schema (spec §9.2) ---
 
-export function submitBrief(brief: Brief): Promise<BriefAccepted> {
-  return request<BriefAccepted>(`${PLANNING_URL}/briefs`, {
+/** The 202 body from `POST /briefs`: planning now runs as an async in-process job the
+ *  client follows over SSE. Hand-typed (like {@link PlanningEvent}) — the frame is
+ *  simple and this avoids a gen:api round-trip for the new contract. */
+export interface PlanningJobAccepted {
+  job_id: string;
+}
+
+export function submitBrief(brief: Brief): Promise<PlanningJobAccepted> {
+  return request<PlanningJobAccepted>(`${PLANNING_URL}/briefs`, {
     method: "POST",
     body: JSON.stringify(brief),
   });
@@ -210,6 +216,48 @@ export function openEvents(projectId: string, handlers: EventsHandlers): EventSo
   });
   source.addEventListener("status", (event) => {
     handlers.onStatus(JSON.parse((event as MessageEvent).data) as StatusEvent);
+  });
+  if (handlers.onError) {
+    source.addEventListener("error", handlers.onError);
+  }
+  return source;
+}
+
+// --- SSE: planning-job progress for the Planning screen ---
+//
+// Hand-typed against `get_plan_job` in libs/state/state/store.py (surfaced by the
+// planning service's `/jobs/{id}/events` route): OpenAPI cannot describe SSE bodies.
+
+/** The `status` SSE frame streamed from `GET /jobs/{jobId}/events`. `stage` is the
+ *  chain step in progress (one of the graph's `STAGE_SEQUENCE`); `project_id` is set
+ *  only on `succeeded`, `errors` only on `failed`. */
+export interface PlanningEvent {
+  job_id: string;
+  status: "queued" | "running" | "succeeded" | "failed";
+  stage: string | null;
+  project_id: string | null;
+  errors: string[] | null;
+}
+
+export interface PlanningEventsHandlers {
+  onStatus: (event: PlanningEvent) => void;
+  onError?: (event: Event) => void;
+}
+
+/**
+ * Subscribe to a planning job's progress stream. Returns the `EventSource` so the
+ * caller can `.close()` it on unmount. The backend emits named `status` frames and
+ * closes the stream itself once the job reaches a terminal status.
+ */
+export function openPlanningEvents(
+  jobId: string,
+  handlers: PlanningEventsHandlers,
+): EventSource {
+  const source = new EventSource(`${PLANNING_URL}/jobs/${jobId}/events`, {
+    withCredentials: true,
+  });
+  source.addEventListener("status", (event) => {
+    handlers.onStatus(JSON.parse((event as MessageEvent).data) as PlanningEvent);
   });
   if (handlers.onError) {
     source.addEventListener("error", handlers.onError);

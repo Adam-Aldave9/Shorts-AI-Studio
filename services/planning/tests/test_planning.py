@@ -274,7 +274,19 @@ def test_run_planning_mock_returns_validatable_package(monkeypatch):
     assert validate_package(pkg).ok
 
 
-def test_create_brief_persists_and_returns_project_id(monkeypatch):
+async def _drive_job_to_terminal(job_id: str, timeout_s: float = 5.0) -> dict:
+    """Poll the job state until it reaches a terminal status (the background task runs
+    on this same loop, so yielding control lets it advance)."""
+    deadline = asyncio.get_running_loop().time() + timeout_s
+    while asyncio.get_running_loop().time() < deadline:
+        frame = await state.get_plan_job(job_id)
+        if frame and frame["status"] in {state.PLAN_SUCCEEDED, state.PLAN_FAILED}:
+            return frame
+        await asyncio.sleep(0.02)
+    raise AssertionError(f"job {job_id} did not finish within {timeout_s}s")
+
+
+def test_create_brief_accepts_job_and_persists_on_success(monkeypatch):
     if fakeredis_aio is None:
         pytest.skip("fakeredis not installed")
     monkeypatch.setenv("MOCK", "true")
@@ -283,15 +295,48 @@ def test_create_brief_persists_and_returns_project_id(monkeypatch):
         client = fakeredis_aio.FakeRedis(decode_responses=True)
         state.use_client(client)
         try:
+            # POST /briefs is now async: 202 + a job id, work runs in the background.
             accepted = await main.create_brief(main.Brief(**_brief()), user_id="user_a")
-            assert accepted.project_id.startswith("p_")
+            assert accepted.job_id.startswith("j_")
+
+            frame = await _drive_job_to_terminal(accepted.job_id)
+            assert frame["status"] == state.PLAN_SUCCEEDED
+            project_id = frame["project_id"]
+            assert project_id.startswith("p_")
+
             # The scheduler's store sees the package immediately, unapproved, and
             # stamped with the authenticated caller as owner.
-            stored = await state.get_package(accepted.project_id)
+            stored = await state.get_package(project_id)
             assert stored is not None
-            assert await state.get_project_owner(accepted.project_id) == "user_a"
+            assert await state.get_project_owner(project_id) == "user_a"
             approved = [p.project_id async for p in state.iter_approved_packages()]
             assert approved == []
+        finally:
+            state.use_client(None)
+
+    asyncio.run(scenario())
+
+
+def test_create_brief_job_fails_on_validation_error(monkeypatch):
+    if fakeredis_aio is None:
+        pytest.skip("fakeredis not installed")
+    monkeypatch.setenv("MOCK", "true")
+    # Force the terminal validate gate to reject, so the job lands on ``failed`` and
+    # carries the validator's error list (today's 422 detail, now via the SSE frame).
+    from validator import ValidationReport
+
+    monkeypatch.setattr(
+        main, "validate_package", lambda _pkg: ValidationReport(errors=["boom rule"])
+    )
+
+    async def scenario():
+        client = fakeredis_aio.FakeRedis(decode_responses=True)
+        state.use_client(client)
+        try:
+            accepted = await main.create_brief(main.Brief(**_brief()), user_id="user_a")
+            frame = await _drive_job_to_terminal(accepted.job_id)
+            assert frame["status"] == state.PLAN_FAILED
+            assert frame["errors"] == ["boom rule"]
         finally:
             state.use_client(None)
 

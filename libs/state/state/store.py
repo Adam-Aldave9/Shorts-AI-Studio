@@ -30,6 +30,7 @@ on a Redis miss. With no ``POSTGRES_URL`` this is Redis-only, exactly as before.
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import os
 from typing import Awaitable, AsyncIterator, Callable
@@ -50,12 +51,32 @@ PHASE_COMPLETE = "complete"
 PHASE_BLOCKED = "blocked"
 PHASE_PAUSED = "paused"
 
+# -- planning-job status (transient, Redis-only; distinct from the execution PHASE_*
+# constants above so the two lifecycles never get confused). A brief submission is an
+# async in-process job: queued -> running(+stage) -> succeeded(project_id) | failed(errors).
+PLAN_QUEUED = "queued"
+PLAN_RUNNING = "running"
+PLAN_SUCCEEDED = "succeeded"
+PLAN_FAILED = "failed"
+PLAN_JOB_TTL_S = 3600  # jobs self-clean an hour after the last write (never persisted)
+
 __all__ = [
     "PHASE_EXECUTING",
     "PHASE_COMPOSITING",
     "PHASE_COMPLETE",
     "PHASE_BLOCKED",
     "PHASE_PAUSED",
+    "PLAN_QUEUED",
+    "PLAN_RUNNING",
+    "PLAN_SUCCEEDED",
+    "PLAN_FAILED",
+    "PLAN_JOB_TTL_S",
+    "create_plan_job",
+    "set_plan_stage",
+    "set_plan_succeeded",
+    "set_plan_failed",
+    "get_plan_job",
+    "get_plan_job_owner",
     "use_client",
     "save_package",
     "get_package",
@@ -413,3 +434,75 @@ async def get_cost(project_id: str) -> float:
     ``CostTracker``). Read-only view for the SSE observability surface (spec §12.4)."""
     raw = await _redis().get(f"cost:{project_id}")
     return float(raw) if raw else 0.0
+
+
+# --------------------------------------------------------------------------
+# Planning jobs (transient, Redis-only)
+# --------------------------------------------------------------------------
+# A brief submission runs the planning chain as an in-process async background task
+# and streams progress over SSE, mirroring the scheduler's daemon+SSE shape. The job's
+# live state is one Redis hash ``planjob:{job_id}`` with a rolling TTL so nothing
+# lingers — unlike packages, jobs are ephemeral and never mirrored to Postgres.
+def _plan_key(job_id: str) -> str:
+    return f"planjob:{job_id}"
+
+
+async def create_plan_job(job_id: str, *, owner_id: str) -> None:
+    """Register a new planning job as ``queued``, stamped with its owner (for the
+    ownership check on the SSE stream). Sets the self-cleaning TTL."""
+    r = _redis()
+    key = _plan_key(job_id)
+    await r.hset(key, mapping={"status": PLAN_QUEUED, "owner": owner_id})
+    await r.expire(key, PLAN_JOB_TTL_S)
+
+
+async def set_plan_stage(job_id: str, stage: str) -> None:
+    """Advance a job to ``running`` and record the current chain stage (the node just
+    entered). Refreshes the TTL so an in-flight job never expires under its own feet."""
+    r = _redis()
+    key = _plan_key(job_id)
+    await r.hset(key, mapping={"status": PLAN_RUNNING, "stage": stage})
+    await r.expire(key, PLAN_JOB_TTL_S)
+
+
+async def set_plan_succeeded(job_id: str, project_id: str) -> None:
+    """Mark a job succeeded, carrying the persisted ``project_id`` the frontend routes
+    to (its checkpoint)."""
+    r = _redis()
+    key = _plan_key(job_id)
+    await r.hset(key, mapping={"status": PLAN_SUCCEEDED, "project_id": project_id})
+    await r.expire(key, PLAN_JOB_TTL_S)
+
+
+async def set_plan_failed(job_id: str, errors: list[str]) -> None:
+    """Mark a job failed, carrying the error list (validator errors or the exception
+    string) the frontend renders in its banner."""
+    r = _redis()
+    key = _plan_key(job_id)
+    await r.hset(key, mapping={"status": PLAN_FAILED, "errors": json.dumps(errors)})
+    await r.expire(key, PLAN_JOB_TTL_S)
+
+
+async def get_plan_job(job_id: str) -> dict | None:
+    """Return the job as an SSE frame, or ``None`` when the hash is missing/expired.
+
+    ``errors`` is parsed back from JSON; ``stage``/``project_id``/``errors`` are
+    ``None`` until the relevant transition writes them, so the frame shape is stable
+    for the client regardless of which state the job is in."""
+    data = await _redis().hgetall(_plan_key(job_id))
+    if not data:
+        return None
+    errors = data.get("errors")
+    return {
+        "job_id": job_id,
+        "status": data.get("status"),
+        "stage": data.get("stage"),
+        "project_id": data.get("project_id"),
+        "errors": json.loads(errors) if errors else None,
+    }
+
+
+async def get_plan_job_owner(job_id: str) -> str | None:
+    """Return the owning ``user_id`` for a job (``None`` if missing/expired) — the
+    ownership check backing the SSE stream's auth dependency."""
+    return await _redis().hget(_plan_key(job_id), "owner")

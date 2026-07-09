@@ -25,7 +25,7 @@ import os
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import TypedDict
+from typing import Callable, TypedDict
 
 from schema import ProductionPackage, World
 from validator import validate_package
@@ -34,6 +34,11 @@ from planning.agents import breakdown, prompts, script, world
 from planning.assembly import assemble_package
 
 log = logging.getLogger("planning")
+
+# The chain's nodes in execution order — the last is the terminal assemble+validate
+# step. The async runner and the frontend use this to render "stage 3 of 5" progress
+# as ``on_stage`` fires per node. Keep in sync with the edges in ``_build_graph``.
+STAGE_SEQUENCE = ["world", "script", "breakdown", "prompts", "assemble"]
 
 # services/planning/planning/graph.py -> parents[3] is the repo root.
 _REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -124,23 +129,42 @@ def _build_graph():
     return graph.compile()
 
 
-def _run_chain_sync(brief: dict) -> ProductionPackage:
+def _run_chain_sync(
+    brief: dict, on_stage: Callable[[str], None] | None = None
+) -> ProductionPackage:
     """Run the compiled graph end to end (blocking: real LLM calls).
 
     The world node fills ``state["world"]`` from the brief, so the initial state is
-    just the brief — no preloaded world."""
+    just the brief — no preloaded world.
+
+    ``stream(stream_mode="updates")`` yields ``{node_name: node_output}`` after each
+    node completes; we fire ``on_stage(node_name)`` per step (so the caller can report
+    per-stage progress) and accumulate the final ``package`` from the assemble step's
+    update."""
     compiled = _build_graph()
-    final: PlanningState = compiled.invoke({"brief": brief})
-    return final["package"]
+    package: ProductionPackage | None = None
+    for step in compiled.stream({"brief": brief}, stream_mode="updates"):
+        for node_name, output in step.items():
+            if on_stage is not None:
+                on_stage(node_name)
+            if output and "package" in output:
+                package = output["package"]
+    if package is None:  # the assemble node always emits a package; guard for safety
+        raise RuntimeError("planning chain produced no package")
+    return package
 
 
-async def run_planning(brief: dict) -> ProductionPackage:
+async def run_planning(
+    brief: dict, on_stage: Callable[[str], None] | None = None
+) -> ProductionPackage:
     """Compile a brief into an (unvalidated-by-caller) production package.
 
-    Mock/no-key -> the hand-authored package. Otherwise run the agent chain on a
-    worker thread so the blocking LLM calls don't stall the FastAPI event loop.
+    Mock/no-key -> the hand-authored package (``on_stage`` is ignored; it returns
+    instantly). Otherwise run the agent chain on a worker thread so the blocking LLM
+    calls don't stall the FastAPI event loop; ``on_stage`` is invoked from that thread
+    as each node completes.
     """
     if _use_mock():
         log.info("planning: MOCK fallback -> hand-authored package")
         return _load_mock_package(brief)
-    return await asyncio.to_thread(_run_chain_sync, brief)
+    return await asyncio.to_thread(_run_chain_sync, brief, on_stage)
