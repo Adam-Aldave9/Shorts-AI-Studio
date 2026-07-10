@@ -1,3 +1,39 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+@layer base {
+  :root {
+    --color-surface: 9 9 11;
+    --color-surface-raised: 24 24 27;
+    --color-surface-overlay: 39 39 42;
+    --color-border: 39 39 42;
+    --color-border-strong: 63 63 70;
+    --color-fg: 244 244 245;
+    --color-fg-muted: 161 161 170;
+    --color-fg-subtle: 113 113 122;
+    --color-accent: 139 92 246;
+    --color-accent-strong: 124 58 237;
+    --color-accent-soft: 167 139 250;
+    --color-success: 74 222 128;
+    --color-danger: 248 113 113;
+    --color-warning: 251 191 36;
+    --color-info: 96 165 250;
+    --color-chart-1: 57 135 229;
+    --color-chart-2: 139 92 246;
+    color-scheme: dark; /* dark native selects, scrollbars, video controls */
+  }
+  body {
+    @apply bg-surface text-fg antialiased;
+  }
+  ::selection {
+    @apply bg-accent/30;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-dag-flow,
+  .animate-node-pulse {
+    animation: none;
+  }
+}

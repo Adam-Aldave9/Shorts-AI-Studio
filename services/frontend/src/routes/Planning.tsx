@@ -23,20 +23,20 @@ type StageState = "done" | "active" | "pending";
 function StageRow({ label, stateName }: { label: string; stateName: StageState }) {
   const dot =
     stateName === "done" ? (
-      <span className="text-green-600">[done]</span>
+      <svg className="h-4 w-4 text-success" viewBox="0 0 16 16" fill="none">
+        <path d="M3 8.5l3 3 7-7" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+      </svg>
     ) : stateName === "active" ? (
-      <span className="h-4 w-4 animate-spin rounded-full border-2 border-neutral-300 border-t-neutral-600" />
+      <span className="h-4 w-4 animate-spin rounded-full border-2 border-surface-overlay border-t-accent" />
     ) : (
-      <span className="h-4 w-4 rounded-full border-2 border-neutral-200" />
+      <span className="h-4 w-4 rounded-full border-2 border-border" />
     );
   return (
     <li className="flex items-center gap-3">
       <span className="flex h-4 w-4 items-center justify-center text-xs">{dot}</span>
       <span
         className={
-          stateName === "pending"
-            ? "text-sm text-neutral-400"
-            : "text-sm text-neutral-800"
+          stateName === "pending" ? "text-sm text-fg-subtle" : "text-sm text-fg"
         }
       >
         {label}
@@ -93,7 +93,7 @@ export default function Planning() {
         <h1 className="text-2xl font-semibold">Planning your film</h1>
         <Spinner />
       </div>
-      <p className="mt-1 text-sm text-neutral-500">
+      <p className="mt-1 text-sm text-fg-muted">
         Compiling the brief into a production package. This can take a minute on a real
         run — you'll be taken to the checkpoint the moment it's ready.
       </p>
@@ -114,7 +114,7 @@ export default function Planning() {
         </ul>
       </Card>
 
-      <p className="mt-4 font-mono text-xs text-neutral-400">{event.job_id}</p>
+      <p className="mt-4 font-mono text-xs text-fg-subtle">{event.job_id}</p>
     </div>
   );
 }

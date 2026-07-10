@@ -6,6 +6,7 @@ import { useState, type FormEvent } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "@/auth/AuthContext";
 import { Button, Card, ErrorBanner, Field, controlClass } from "@/components/ui";
+import { Logo } from "@/components/Logo";
 
 interface LocationState {
   from?: { pathname: string };
@@ -39,8 +40,11 @@ export default function Login() {
 
   return (
     <div className="mx-auto flex min-h-screen max-w-md flex-col justify-center px-6">
+      <Link to="/" className="mb-6">
+        <Logo withWordmark />
+      </Link>
       <h1 className="text-2xl font-semibold">Sign in</h1>
-      <p className="mt-1 text-sm text-neutral-500">
+      <p className="mt-1 text-sm text-fg-muted">
         Sign in to the AI Film Pipeline to submit briefs and monitor your runs.
       </p>
 
@@ -51,6 +55,7 @@ export default function Login() {
               className={controlClass}
               value={username}
               autoComplete="username"
+              autoFocus
               onChange={(event) => setUsername(event.target.value)}
             />
           </Field>
@@ -72,9 +77,9 @@ export default function Login() {
         </form>
       </Card>
 
-      <p className="mt-4 text-center text-sm text-neutral-500">
+      <p className="mt-4 text-center text-sm text-fg-muted">
         No account?{" "}
-        <Link className="font-medium text-neutral-900 hover:underline" to="/register">
+        <Link className="font-medium text-accent-soft hover:text-accent hover:underline" to="/register">
           Create one
         </Link>
       </p>

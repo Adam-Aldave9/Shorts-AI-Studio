@@ -60,18 +60,18 @@ export default function Result() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold">{pkg?.meta.title ?? "Result"}</h1>
-          <p className="font-mono text-xs text-neutral-400">{projectId}</p>
+          <p className="font-mono text-xs text-fg-subtle">{projectId}</p>
         </div>
-        <Link className="text-sm text-neutral-600 underline hover:text-neutral-900" to="/history">
+        <Link className="text-sm text-accent-soft underline hover:text-accent" to="/history">
           Back to history
         </Link>
       </div>
 
       {finalUrl ? (
         <div className="space-y-2">
-          <video className="w-full rounded-lg border bg-black" src={finalUrl} controls />
+          <video className="w-full rounded-xl border bg-black" src={finalUrl} controls />
           <a
-            className="text-sm text-neutral-600 underline hover:text-neutral-900"
+            className="text-sm text-accent-soft underline hover:text-accent"
             href={finalUrl}
             download
           >
@@ -98,19 +98,42 @@ export default function Result() {
       </div>
 
       {chartData.length > 0 && (
-        <div className="rounded-lg border bg-white p-4">
-          <div className="mb-3 text-xs uppercase tracking-wide text-neutral-500">
+        <div className="rounded-xl border bg-surface-raised p-4">
+          <div className="mb-3 text-xs uppercase tracking-wide text-fg-subtle">
             Cost by node (estimated vs actual)
           </div>
           <ResponsiveContainer width="100%" height={Math.max(260, chartData.length * 26)}>
             <BarChart data={chartData} layout="vertical" margin={{ left: 16, right: 24 }}>
-              <CartesianGrid strokeDasharray="3 3" horizontal={false} />
-              <XAxis type="number" tickFormatter={(value) => `$${Number(value).toFixed(2)}`} fontSize={11} />
-              <YAxis type="category" dataKey="node" width={130} fontSize={10} />
-              <Tooltip formatter={(value) => formatUsd(Number(value))} />
-              <Legend />
-              <Bar dataKey="estimated" name="Estimated" fill="#a3a3a3" />
-              <Bar dataKey="actual" name="Actual" fill="#16a34a" />
+              <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#27272a" />
+              <XAxis
+                type="number"
+                tickFormatter={(value) => `$${Number(value).toFixed(2)}`}
+                tick={{ fill: "#a1a1aa", fontSize: 11 }}
+                axisLine={{ stroke: "#3f3f46" }}
+                tickLine={false}
+              />
+              <YAxis
+                type="category"
+                dataKey="node"
+                width={130}
+                tick={{ fill: "#a1a1aa", fontSize: 10 }}
+                axisLine={false}
+                tickLine={false}
+              />
+              <Tooltip
+                formatter={(value) => formatUsd(Number(value))}
+                cursor={{ fill: "rgba(255,255,255,0.04)" }}
+                contentStyle={{
+                  backgroundColor: "#18181b",
+                  border: "1px solid #27272a",
+                  borderRadius: 8,
+                  color: "#f4f4f5",
+                }}
+                labelStyle={{ color: "#a1a1aa" }}
+              />
+              <Legend formatter={(v) => <span style={{ color: "#a1a1aa", fontSize: 12 }}>{v}</span>} />
+              <Bar dataKey="estimated" name="Estimated" fill="#3987e5" radius={[0, 4, 4, 0]} />
+              <Bar dataKey="actual" name="Actual" fill="#8b5cf6" radius={[0, 4, 4, 0]} />
             </BarChart>
           </ResponsiveContainer>
         </div>

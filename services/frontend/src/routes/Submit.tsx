@@ -48,7 +48,7 @@ export default function Submit() {
   return (
     <div className="mx-auto max-w-2xl">
       <h1 className="text-2xl font-semibold">Submit a brief</h1>
-      <p className="mt-1 text-sm text-neutral-500">
+      <p className="mt-1 text-sm text-fg-muted">
         Describe the film. Planning compiles it into a production package you review at the
         checkpoint before anything renders.
       </p>
@@ -60,9 +60,12 @@ export default function Submit() {
               className={controlClass}
               rows={5}
               value={premise}
+              autoFocus
+              maxLength={500}
               onChange={(event) => setPremise(event.target.value)}
               placeholder="A lone explorer treks through the Amazon rainforest at dawn..."
             />
+            <div className="mt-1 text-right text-xs text-fg-subtle">{premise.length}/500</div>
           </Field>
 
           <div className="grid grid-cols-1 gap-5 sm:grid-cols-3">
@@ -116,7 +119,7 @@ export default function Submit() {
             <Button type="submit" disabled={!premise.trim() || mutation.isPending}>
               {mutation.isPending ? "Planning..." : "Generate package"}
             </Button>
-            <span className="text-xs text-neutral-400">
+            <span className="text-xs text-fg-subtle">
               Runs the planning chain (mock returns a 30-shot rainforest package).
             </span>
           </div>
