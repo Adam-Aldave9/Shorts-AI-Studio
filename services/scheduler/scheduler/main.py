@@ -34,6 +34,7 @@ from scheduler.state import (
     get_node,
     get_package,
     get_project_phase,
+    is_package_approved,
     iter_user_packages,
     save_package,
 )
@@ -158,7 +159,20 @@ async def update_package(project_id: str, package: ProductionPackage) -> Product
     """Save a checkpoint edit. Re-runs the validator server-side (spec §4.3).
 
     ``owner_id`` is omitted so the existing owner is preserved (the store/Postgres
-    COALESCE ownership across edits) — an edit can never reassign a package."""
+    COALESCE ownership across edits) — an edit can never reassign a package.
+
+    Once the package is approved the run has started (or is about to — the daemon
+    picks up the approved set within ~1s), so edits are locked out with a 409 rather
+    than mutating a spec already in flight. ``is_package_approved`` (approved-set
+    membership) is the race-free lock condition; ``phase`` is ``None`` for the first
+    tick after approval. Explicit unlock (``save_package(approved=False)``) is the
+    future hook for the spec's blocked/edit/re-run recovery flow (no frontend today)."""
+    if await is_package_approved(project_id):
+        raise HTTPException(409, "Package is approved and locked; edits are no longer accepted.")
+    # A mismatched body would persist under a different Redis key than the one
+    # ``owned_package`` authorized — reject it rather than write cross-project.
+    if package.project_id != project_id:
+        raise HTTPException(422, "project_id in body must match URL")
     report = validate_package(package)
     if not report.ok:
         raise HTTPException(422, detail=report.errors)
@@ -168,9 +182,38 @@ async def update_package(project_id: str, package: ProductionPackage) -> Product
 
 @app.post("/packages/{project_id}/approve", dependencies=[Depends(owned_package)])
 async def approve(project_id: str) -> dict[str, str]:
+    # Approving is the point of no return for edits, so a second approve is a
+    # conflict (409), not a silent idempotent no-op — the caller's UI must learn the
+    # run is already locked.
+    if await is_package_approved(project_id):
+        raise HTTPException(409, "Package is already approved.")
     if not await approve_package(project_id):
         raise HTTPException(404, "package not found")
     return {"status": "approved"}
+
+
+class PackageStatus(BaseModel):
+    """Editability of a package for the Checkpoint screen. Kept off the shared
+    ``ProductionPackage`` schema so the seam contract stays clean — the UI reads this
+    to decide whether to lock the form. ``approved`` is the authoritative lock flag;
+    ``phase`` is advisory (``None`` for the ~1s before the daemon starts the run)."""
+
+    project_id: str
+    approved: bool
+    phase: str | None
+
+
+@app.get(
+    "/packages/{project_id}/status",
+    response_model=PackageStatus,
+    dependencies=[Depends(owned_package)],
+)
+async def package_status(project_id: str) -> PackageStatus:
+    return PackageStatus(
+        project_id=project_id,
+        approved=await is_package_approved(project_id),
+        phase=await get_project_phase(project_id),
+    )
 
 
 async def _status_event(project_id: str) -> dict | None:

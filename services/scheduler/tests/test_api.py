@@ -39,6 +39,14 @@ def _pkg() -> ProductionPackage:
     )
 
 
+def _valid_pkg() -> ProductionPackage:
+    """Like ``_pkg`` but passes the server-side validator (video node carries its
+    reference image), so the edit-lock tests exercise the real save path."""
+    pkg = _pkg()
+    pkg.assets[1].reference_image_ids = ["ref_a"]
+    return pkg
+
+
 def _run(scenario):
     """Run ``scenario(client)`` on one loop with fakeredis wired into state."""
     if fakeredis_aio is None:
@@ -159,5 +167,98 @@ def test_status_event_reports_complete_with_final_url():
 def test_status_event_none_before_package_ingested():
     async def scenario(_client):
         assert await main._status_event("missing") is None
+
+    _run(scenario)
+
+
+# --- Edit lock: PUT/approve gate on approved-set membership (spec §4.3) ---
+
+
+def test_update_package_before_approval_persists():
+    async def scenario(_client):
+        await main.create_package(_valid_pkg(), user_id="user_a")
+        edited = _valid_pkg()
+        edited.meta.title = "Edited title"
+        result = await main.update_package("p1", edited)
+        assert result.meta.title == "Edited title"
+
+        stored = await state.get_package("p1")
+        assert stored is not None
+        assert stored.meta.title == "Edited title"
+
+    _run(scenario)
+
+
+def test_update_package_after_approval_is_409():
+    async def scenario(_client):
+        await main.create_package(_pkg(), user_id="user_a")
+        assert await state.approve_package("p1") is True
+
+        edited = _pkg()
+        edited.meta.title = "Too late"
+        with pytest.raises(main.HTTPException) as exc:
+            await main.update_package("p1", edited)
+        assert exc.value.status_code == 409
+
+        # The pre-approval spec is untouched.
+        stored = await state.get_package("p1")
+        assert stored is not None and stored.meta.title == "T"
+
+    _run(scenario)
+
+
+def test_approve_twice_is_409():
+    async def scenario(_client):
+        await main.create_package(_pkg(), user_id="user_a")
+        assert await main.approve("p1") == {"status": "approved"}
+
+        with pytest.raises(main.HTTPException) as exc:
+            await main.approve("p1")
+        assert exc.value.status_code == 409
+
+    _run(scenario)
+
+
+def test_update_package_project_id_mismatch_is_422():
+    async def scenario(_client):
+        await main.create_package(_pkg(), user_id="user_a")
+        mismatched = _pkg()
+        mismatched.project_id = "someone-else"
+        with pytest.raises(main.HTTPException) as exc:
+            await main.update_package("p1", mismatched)
+        assert exc.value.status_code == 422
+
+    _run(scenario)
+
+
+def test_update_package_still_runs_validator():
+    async def scenario(_client):
+        await main.create_package(_valid_pkg(), user_id="user_a")
+        # Budget below the estimated cost fails the validator's budget rule — proves
+        # the validator path still runs on the pre-approval edit (the package is
+        # otherwise valid, so budget is the sole failure).
+        bad = _valid_pkg()
+        bad.meta.budget_usd = 0.01
+        with pytest.raises(main.HTTPException) as exc:
+            await main.update_package("p1", bad)
+        assert exc.value.status_code == 422
+
+    _run(scenario)
+
+
+def test_package_status_reports_approval_and_phase():
+    async def scenario(_client):
+        await main.create_package(_pkg(), user_id="user_a")
+
+        before = await main.package_status("p1")
+        assert before.approved is False
+        assert before.phase is None
+
+        await state.approve_package("p1")
+        await state.set_project_phase("p1", state.PHASE_EXECUTING)
+
+        after = await main.package_status("p1")
+        assert after.approved is True
+        assert after.phase == "executing"
 
     _run(scenario)

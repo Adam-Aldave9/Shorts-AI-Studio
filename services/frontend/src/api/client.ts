@@ -172,6 +172,20 @@ export function approvePackage(projectId: string): Promise<{ status: string }> {
   });
 }
 
+/** Editability of a package (matches the scheduler's `PackageStatus`). Hand-typed
+ *  like the SSE frames — kept off the generated `ProductionPackage` schema so the
+ *  seam contract stays clean. `approved` is the authoritative edit lock; once true
+ *  the run has started and PUT/approve return 409. */
+export interface PackageStatus {
+  project_id: string;
+  approved: boolean;
+  phase: string | null;
+}
+
+export function getPackageStatus(projectId: string): Promise<PackageStatus> {
+  return request<PackageStatus>(`${SCHEDULER_URL}/packages/${projectId}/status`);
+}
+
 // --- SSE: live run status for the Status screen ---
 //
 // Hand-typed against `_status_event` in scheduler/scheduler/main.py: OpenAPI
