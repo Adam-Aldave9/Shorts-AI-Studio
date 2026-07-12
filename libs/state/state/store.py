@@ -81,6 +81,7 @@ __all__ = [
     "save_package",
     "get_package",
     "approve_package",
+    "is_package_approved",
     "iter_approved_packages",
     "iter_all_packages",
     "iter_user_packages",
@@ -226,6 +227,16 @@ async def approve_package(project_id: str) -> bool:
     await r.sadd("projects:approved", project_id)
     await _mirror(lambda: pg.mark_approved(project_id), "approve_package")
     return True
+
+
+async def is_package_approved(project_id: str) -> bool:
+    """True once /approve added the project to the approved set (Redis is the
+    daemon's source of truth for approval, so it is the edit lock's too).
+
+    The daemon only sets ``phase=executing`` ~1s after it first sees the project in
+    ``projects:approved``, so a phase-based lock has a race; membership here does not.
+    """
+    return bool(await _redis().sismember("projects:approved", project_id))
 
 
 async def iter_approved_packages() -> AsyncIterator[ProductionPackage]:

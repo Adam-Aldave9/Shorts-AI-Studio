@@ -1,26 +1,35 @@
 // Checkpoint screen (spec §4.3, §9.2) - the human-in-the-loop gate that cannot be
 // cut. Left pane: a rendered summary of the package the scheduler is serving. Right
-// pane: the raw package JSON in Monaco, schema-validated against GET /schema.
+// pane: two views of the same package -
+//   Form           - structured editing of the safe fields (default).
+//   Advanced (JSON) - the raw package in Monaco, schema-validated against GET /schema.
 //
-//   Approve -> POST /approve, then route to the live Status view.
+//   Approve -> (auto-save any unsaved edits) POST /approve, then route to Status.
 //   Save    -> PUT /packages/{id}; the server re-runs the validator and returns 422
 //              with the failing rules, shown inline.
 //   Reject  -> discard (leave it unapproved) and go back to History.
+//
+// Once the run has started the package is locked (approved-set membership, surfaced by
+// GET /packages/{id}/status): every control goes read-only and Save/Approve disappear.
+// A direct edit/re-approve of a locked package 409s; we treat that as "run started".
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Editor, { useMonaco } from "@monaco-editor/react";
 import {
+  ApiError,
   approvePackage,
   getPackage,
   getPackageSchema,
+  getPackageStatus,
   updatePackage,
   type ProductionPackage,
 } from "@/api/client";
 import { estimatedTotalUsd, shotDurationS, videoShots, voiceovers } from "@/lib/package";
 import { formatDuration, formatUsd } from "@/lib/format";
-import { Button, Card, ErrorBanner, Spinner, Stat, SuccessBanner } from "@/components/ui";
+import { Button, Card, ErrorBanner, Spinner, Stat, SuccessBanner, cn } from "@/components/ui";
+import PackageEditForm from "@/components/PackageEditForm";
 
 // Monaco's JSON `jsonDefaults` is not surfaced by the loader's slim types (the
 // monaco-editor package types aren't resolved), so narrow to just what we call.
@@ -43,13 +52,30 @@ export default function Checkpoint() {
     enabled: Boolean(projectId),
   });
   const schemaQuery = useQuery({ queryKey: ["schema"], queryFn: getPackageSchema });
+  const statusQuery = useQuery({
+    queryKey: ["packageStatus", projectId],
+    queryFn: () => getPackageStatus(projectId),
+    enabled: Boolean(projectId),
+  });
+  const locked = statusQuery.data?.approved === true;
 
-  const [draft, setDraft] = useState("");
+  const [advanced, setAdvanced] = useState(false);
+  const [draft, setDraft] = useState(""); // Monaco (advanced) draft
   const [parseError, setParseError] = useState<string | null>(null);
   const initializedFor = useRef<string | null>(null);
 
-  // Seed the editor once per project, then leave it under user control. The save
-  // mutation re-seeds it from the server's canonical copy on success.
+  // The form's current merged package + dirtiness, kept in a ref so keystrokes don't
+  // re-render Checkpoint. Source of truth stays the cached package; this is a live view.
+  const formStateRef = useRef<{ merged: ProductionPackage; dirty: boolean }>({
+    merged: packageQuery.data ?? ({} as ProductionPackage),
+    dirty: false,
+  });
+  const onFormDraftChange = useCallback((merged: ProductionPackage, dirty: boolean) => {
+    formStateRef.current = { merged, dirty };
+  }, []);
+
+  // Seed the Monaco editor once per project, then leave it under user control. The
+  // save mutation re-seeds it from the server's canonical copy on success.
   useEffect(() => {
     if (packageQuery.data && initializedFor.current !== projectId) {
       setDraft(JSON.stringify(packageQuery.data, null, 2));
@@ -70,28 +96,31 @@ export default function Checkpoint() {
 
   const approveMutation = useMutation({
     mutationFn: () => approvePackage(projectId),
-    onSuccess: () => navigate(`/status/${projectId}`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["packageStatus", projectId] });
+      navigate(`/status/${projectId}`);
+    },
+    onError: (error) => {
+      if (error instanceof ApiError && error.status === 409) {
+        queryClient.invalidateQueries({ queryKey: ["packageStatus", projectId] });
+      }
+    },
   });
 
   const saveMutation = useMutation({
     mutationFn: (pkg: ProductionPackage) => updatePackage(projectId, pkg),
     onSuccess: (saved) => {
+      // Re-seed both views from the server's canonical copy (identity change re-seeds
+      // the form; we rewrite the Monaco draft explicitly).
       queryClient.setQueryData(["package", projectId], saved);
       setDraft(JSON.stringify(saved, null, 2));
     },
+    onError: (error) => {
+      if (error instanceof ApiError && error.status === 409) {
+        queryClient.invalidateQueries({ queryKey: ["packageStatus", projectId] });
+      }
+    },
   });
-
-  function onSave() {
-    setParseError(null);
-    let parsed: ProductionPackage;
-    try {
-      parsed = JSON.parse(draft) as ProductionPackage;
-    } catch (error) {
-      setParseError(error instanceof Error ? error.message : "Invalid JSON");
-      return;
-    }
-    saveMutation.mutate(parsed);
-  }
 
   if (packageQuery.isLoading) return <Spinner label="Loading package..." />;
   if (packageQuery.isError) {
@@ -104,6 +133,64 @@ export default function Checkpoint() {
   const narration = voiceovers(pkg)[0]?.text ?? null;
   const busy = approveMutation.isPending || saveMutation.isPending;
 
+  /** Parse the Monaco draft into a package, surfacing parse errors in the banner. */
+  function parseMonaco(): ProductionPackage | null {
+    setParseError(null);
+    try {
+      return JSON.parse(draft) as ProductionPackage;
+    } catch (error) {
+      setParseError(error instanceof Error ? error.message : "Invalid JSON");
+      return null;
+    }
+  }
+
+  function onSave() {
+    if (locked) return;
+    if (advanced) {
+      const parsed = parseMonaco();
+      if (parsed) saveMutation.mutate(parsed);
+    } else {
+      saveMutation.mutate(formStateRef.current.merged);
+    }
+  }
+
+  // Approve, saving any pending edits first — a 422 there blocks approval with the
+  // validator banner explaining why. Uses mutateAsync so approve only runs on save ok.
+  async function onApprove() {
+    if (locked) return;
+    const dirty = advanced ? draft !== JSON.stringify(pkg, null, 2) : formStateRef.current.dirty;
+    if (dirty) {
+      const pending = advanced ? parseMonaco() : formStateRef.current.merged;
+      if (!pending) return; // broken JSON — banner already shown
+      try {
+        await saveMutation.mutateAsync(pending);
+      } catch {
+        return; // 422/409 surfaced by saveMutation.isError
+      }
+    }
+    approveMutation.mutate();
+  }
+
+  // Toggle the right-pane view. Switching carries pending edits across so neither view
+  // silently drops them; the visible editor is always the authoritative one.
+  function switchToAdvanced() {
+    // Form -> Advanced: serialize the form's pending edits into the Monaco draft.
+    setDraft(JSON.stringify(formStateRef.current.merged, null, 2));
+    setAdvanced(true);
+  }
+  function switchToForm() {
+    // Advanced -> Form: the form re-seeds from the cached package, so the Monaco edits
+    // must be committed there first. Block the switch on invalid JSON.
+    const parsed = parseMonaco();
+    if (!parsed) return;
+    queryClient.setQueryData(["package", projectId], parsed);
+    setAdvanced(false);
+  }
+  function discardJsonEdits() {
+    setParseError(null);
+    setDraft(JSON.stringify(pkg, null, 2));
+  }
+
   return (
     <div>
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -113,16 +200,33 @@ export default function Checkpoint() {
         </div>
         <div className="flex items-center gap-2">
           <Button variant="danger" onClick={() => navigate("/history")} disabled={busy}>
-            Reject
+            {locked ? "Back" : "Reject"}
           </Button>
-          <Button variant="secondary" onClick={onSave} disabled={busy}>
-            {saveMutation.isPending ? "Saving..." : "Save changes"}
-          </Button>
-          <Button onClick={() => approveMutation.mutate()} disabled={busy}>
-            {approveMutation.isPending ? "Approving..." : "Approve & run"}
-          </Button>
+          {!locked && (
+            <>
+              <Button variant="secondary" onClick={onSave} disabled={busy}>
+                {saveMutation.isPending ? "Saving..." : "Save changes"}
+              </Button>
+              <Button onClick={onApprove} disabled={busy}>
+                {approveMutation.isPending ? "Approving..." : "Approve & run"}
+              </Button>
+            </>
+          )}
         </div>
       </div>
+
+      {locked && (
+        <div className="mt-4 rounded-md border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-300">
+          Approved and running — view only.{" "}
+          <button
+            className="underline hover:text-amber-200"
+            onClick={() => navigate(`/status/${projectId}`)}
+          >
+            Open the live status
+          </button>
+          .
+        </div>
+      )}
 
       <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-2">
         {/* Left: rendered summary */}
@@ -193,33 +297,86 @@ export default function Checkpoint() {
           </div>
         </div>
 
-        {/* Right: raw JSON editor */}
+        {/* Right: editable views (Form default, Advanced JSON escape hatch) */}
         <div className="space-y-3">
-          {parseError && <ErrorBanner title="Invalid JSON" error={parseError} />}
+          <div className="flex items-center gap-1 rounded-md border border-border bg-surface-raised p-1 text-sm">
+            <button
+              className={cn(
+                "flex-1 rounded px-3 py-1.5 font-medium transition",
+                !advanced ? "bg-surface-overlay text-fg" : "text-fg-muted hover:text-fg",
+              )}
+              onClick={() => !advanced || switchToForm()}
+            >
+              Form
+            </button>
+            <button
+              className={cn(
+                "flex-1 rounded px-3 py-1.5 font-medium transition",
+                advanced ? "bg-surface-overlay text-fg" : "text-fg-muted hover:text-fg",
+              )}
+              onClick={() => advanced || switchToAdvanced()}
+            >
+              Advanced (JSON)
+            </button>
+          </div>
+
+          {parseError && (
+            <div className="space-y-2">
+              <ErrorBanner title="Invalid JSON" error={parseError} />
+              <Button variant="ghost" onClick={discardJsonEdits}>
+                Discard JSON edits
+              </Button>
+            </div>
+          )}
           {saveMutation.isError && (
-            <ErrorBanner title="Validation failed" error={saveMutation.error} />
+            <ErrorBanner
+              title={
+                saveMutation.error instanceof ApiError && saveMutation.error.status === 409
+                  ? "Run already started — package is locked"
+                  : "Validation failed"
+              }
+              error={saveMutation.error}
+            />
           )}
           {approveMutation.isError && (
-            <ErrorBanner title="Could not approve" error={approveMutation.error} />
+            <ErrorBanner
+              title={
+                approveMutation.error instanceof ApiError && approveMutation.error.status === 409
+                  ? "Run already started — package is locked"
+                  : "Could not approve"
+              }
+              error={approveMutation.error}
+            />
           )}
           {saveMutation.isSuccess && !saveMutation.isPending && (
             <SuccessBanner>Saved and re-validated.</SuccessBanner>
           )}
-          <div className="overflow-hidden rounded-xl border">
-            <Editor
-              height="70vh"
-              defaultLanguage="json"
-              theme="vs-dark"
-              value={draft}
-              onChange={(value) => setDraft(value ?? "")}
-              options={{
-                minimap: { enabled: false },
-                fontSize: 12,
-                scrollBeyondLastLine: false,
-                tabSize: 2,
-              }}
+
+          {advanced ? (
+            <div className="overflow-hidden rounded-xl border">
+              <Editor
+                height="70vh"
+                defaultLanguage="json"
+                theme="vs-dark"
+                value={draft}
+                onChange={(value) => setDraft(value ?? "")}
+                options={{
+                  minimap: { enabled: false },
+                  fontSize: 12,
+                  scrollBeyondLastLine: false,
+                  tabSize: 2,
+                  readOnly: locked,
+                }}
+              />
+            </div>
+          ) : (
+            <PackageEditForm
+              pkg={pkg}
+              disabled={locked}
+              saving={saveMutation.isPending}
+              onDraftChange={onFormDraftChange}
             />
-          </div>
+          )}
         </div>
       </div>
     </div>
