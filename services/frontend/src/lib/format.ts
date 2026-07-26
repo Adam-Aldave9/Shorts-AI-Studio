@@ -1,13 +1,10 @@
-// Small presentation helpers shared across the screens. Kept dependency-free so
-// they stay trivially testable and reusable.
-
-/** Costs in this system are cents-scale; show more precision for sub-dollar values. */
+/** Costs here are cents-scale; show more precision for sub-dollar values. */
 export function formatUsd(value: number): string {
   const decimals = value !== 0 && Math.abs(value) < 1 ? 4 : 2;
   return `$${value.toFixed(decimals)}`;
 }
 
-/** Seconds -> "12s" / "1m 30s" (durations are short, single-digit minutes). */
+/** Seconds -> "12s" / "1m 30s". */
 export function formatDuration(seconds: number): string {
   if (!Number.isFinite(seconds)) return "-";
   if (seconds < 60) return `${Math.round(seconds)}s`;

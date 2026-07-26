@@ -20,7 +20,7 @@ import "@/index.css";
 const queryClient = new QueryClient();
 
 const router = createBrowserRouter([
-  { path: "/", element: <Landing /> }, // public landing
+  { path: "/", element: <Landing /> },
   { path: "/login", element: <Login /> },
   { path: "/register", element: <Register /> },
   // Everything else requires a session. The wrappers are pathless so `/` matches

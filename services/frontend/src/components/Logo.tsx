@@ -1,8 +1,7 @@
-// Shared brand mark: the same violet play glyph as the favicon, colored via
-// currentColor so callers set the hue with a text-* class. Used by the App header,
-// Login/Register, and the landing nav/footer.
+// Shared brand mark (the same play glyph as the favicon), colored via currentColor so
+// callers set the hue with a text-* class.
 
-import { cn } from "@/components/ui";
+import { cn } from "@/lib/cn";
 
 export function Logo({
   withWordmark = false,
