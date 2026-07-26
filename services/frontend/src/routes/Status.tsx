@@ -1,10 +1,12 @@
-// Status screen (spec §9.2): live DAG view driven by the scheduler's SSE stream.
-// Node pills, cost-to-date, critical-path floor, in-flight / queue depth. When the
-// run reaches `complete` the compositor has set final_url, so route to the Result.
+// Status screen: live DAG view driven by the scheduler's SSE stream. Node
+// pills, cost-to-date, critical-path floor, in-flight / queue depth. On `complete` the
+// compositor has set final_url, so hand off to the Result view.
 
-import { useEffect, useRef, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
-import { openEvents, type StatusEvent } from "@/api/client";
+import { useEffect } from "react";
+import { Link, useParams } from "react-router-dom";
+import type { StatusEvent } from "@/api/client";
+import { useStatusStream } from "@/hooks/useStatusStream";
+import { useNavigateOnce } from "@/hooks/useNavigateOnce";
 import { formatDuration, formatUsd } from "@/lib/format";
 import { PhaseBadge, Spinner, StatusBadge, Stat, SuccessBanner } from "@/components/ui";
 
@@ -14,25 +16,16 @@ function countByStatus(event: StatusEvent, status: string): number {
 
 export default function Status() {
   const { projectId = "" } = useParams();
-  const navigate = useNavigate();
-  const [event, setEvent] = useState<StatusEvent | null>(null);
-  const navigated = useRef(false);
+  const event = useStatusStream(projectId);
+  const navigateOnce = useNavigateOnce();
 
+  // Once the compositor has finished, hand off to Result (after briefly showing the
+  // completed state).
   useEffect(() => {
-    if (!projectId) return;
-    const source = openEvents(projectId, { onStatus: setEvent });
-    return () => source.close();
-  }, [projectId]);
-
-  // Once the compositor has finished, hand off to the Result view (briefly showing
-  // the completed state first).
-  useEffect(() => {
-    if (event?.complete && !navigated.current) {
-      navigated.current = true;
-      const timer = setTimeout(() => navigate(`/result/${projectId}`), 1200);
-      return () => clearTimeout(timer);
-    }
-  }, [event, navigate, projectId]);
+    if (!event?.complete) return;
+    const timer = setTimeout(() => navigateOnce(`/result/${projectId}`), 1200);
+    return () => clearTimeout(timer);
+  }, [event, navigateOnce, projectId]);
 
   if (!event) return <Spinner label="Connecting to run..." />;
 
@@ -52,15 +45,14 @@ export default function Status() {
 
       <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
         <Stat label="Cost to date" value={formatUsd(event.cost_usd)} />
-        <Stat
-          label="Critical path"
-          value={formatDuration(event.critical_path_s)}
-          hint="floor"
-        />
+        <Stat label="Critical path" value={formatDuration(event.critical_path_s)} hint="floor" />
         <Stat label="In flight" value={countByStatus(event, "dispatched")} />
         <Stat label="Queued" value={countByStatus(event, "pending")} />
         <Stat label="Done" value={countByStatus(event, "succeeded")} />
-        <Stat label="Failed" value={countByStatus(event, "failed") + countByStatus(event, "dead-lettered")} />
+        <Stat
+          label="Failed"
+          value={countByStatus(event, "failed") + countByStatus(event, "dead-lettered")}
+        />
       </div>
 
       <div className="mt-4 h-1.5 overflow-hidden rounded-full bg-surface-overlay">

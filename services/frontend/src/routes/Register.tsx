@@ -1,13 +1,13 @@
-// Registration screen. Client-side rules mirror the server's Pydantic validators
-// (username 3-32 + charset, password 12-128, confirmation match) so obvious mistakes
-// are caught before a round-trip; the server remains the authority (e.g. 409 on a
-// taken username).
+// Registration screen. Client-side rules mirror the server's Pydantic validators (username
+// 3-32 + charset, password 12-128, confirmation match) so obvious mistakes are caught
+// before a round-trip; the server stays the authority (e.g. 409 on a taken username).
 
 import { useMemo, useState, type FormEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "@/auth/AuthContext";
-import { Button, Card, ErrorBanner, Field, controlClass } from "@/components/ui";
-import { Logo } from "@/components/Logo";
+import { useAuthSubmit } from "@/hooks/useAuthSubmit";
+import { Button, ErrorBanner, Field, controlClass } from "@/components/ui";
+import { AuthScreen } from "@/components/AuthScreen";
 
 const USERNAME_RE = /^[a-zA-Z0-9_.-]+$/;
 
@@ -35,8 +35,10 @@ export default function Register() {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
-  const [error, setError] = useState<unknown>(null);
-  const [pending, setPending] = useState(false);
+  const { error, pending, submit } = useAuthSubmit(async () => {
+    await register(username.trim(), password);
+    navigate("/submit", { replace: true });
+  });
 
   // Only surface a client-side rule once the user has typed something in the field.
   const clientError = useMemo(() => {
@@ -52,77 +54,65 @@ export default function Register() {
   async function onSubmit(event: FormEvent) {
     event.preventDefault();
     if (!canSubmit) return;
-    setPending(true);
-    setError(null);
-    try {
-      await register(username.trim(), password);
-      navigate("/submit", { replace: true });
-    } catch (err) {
-      setError(err);
-    } finally {
-      setPending(false);
-    }
+    await submit();
   }
 
   return (
-    <div className="mx-auto flex min-h-screen max-w-md flex-col justify-center px-6">
-      <Link to="/" className="mb-6">
-        <Logo withWordmark />
-      </Link>
-      <h1 className="text-2xl font-semibold">Create an account</h1>
-      <p className="mt-1 text-sm text-fg-muted">
-        Sign up to submit briefs and manage your own runs.
-      </p>
+    <AuthScreen
+      title="Create an account"
+      subtitle="Sign up to submit briefs and manage your own runs."
+      footer={
+        <>
+          Already have an account?{" "}
+          <Link
+            className="font-medium text-accent-soft hover:text-accent hover:underline"
+            to="/login"
+          >
+            Sign in
+          </Link>
+        </>
+      }
+    >
+      <form className="space-y-5" onSubmit={onSubmit}>
+        <Field label="Username" hint="3–32 chars: letters, digits, . _ -">
+          <input
+            className={controlClass}
+            value={username}
+            autoComplete="username"
+            autoFocus
+            onChange={(event) => setUsername(event.target.value)}
+          />
+        </Field>
+        <Field label="Password" hint="at least 12 characters">
+          <input
+            className={controlClass}
+            type="password"
+            value={password}
+            autoComplete="new-password"
+            onChange={(event) => setPassword(event.target.value)}
+          />
+        </Field>
+        <Field label="Confirm password">
+          <input
+            className={controlClass}
+            type="password"
+            value={confirm}
+            autoComplete="new-password"
+            onChange={(event) => setConfirm(event.target.value)}
+          />
+        </Field>
 
-      <Card className="mt-6">
-        <form className="space-y-5" onSubmit={onSubmit}>
-          <Field label="Username" hint="3–32 chars: letters, digits, . _ -">
-            <input
-              className={controlClass}
-              value={username}
-              autoComplete="username"
-              autoFocus
-              onChange={(event) => setUsername(event.target.value)}
-            />
-          </Field>
-          <Field label="Password" hint="at least 12 characters">
-            <input
-              className={controlClass}
-              type="password"
-              value={password}
-              autoComplete="new-password"
-              onChange={(event) => setPassword(event.target.value)}
-            />
-          </Field>
-          <Field label="Confirm password">
-            <input
-              className={controlClass}
-              type="password"
-              value={confirm}
-              autoComplete="new-password"
-              onChange={(event) => setConfirm(event.target.value)}
-            />
-          </Field>
+        {clientError && (
+          <div className="rounded-md border border-warning/30 bg-warning/10 px-4 py-3 text-sm text-warning">
+            {clientError}
+          </div>
+        )}
+        {error != null && <ErrorBanner title="Could not create account" error={error} />}
 
-          {clientError && (
-            <div className="rounded-md border border-warning/30 bg-warning/10 px-4 py-3 text-sm text-warning">
-              {clientError}
-            </div>
-          )}
-          {error != null && <ErrorBanner title="Could not create account" error={error} />}
-
-          <Button type="submit" disabled={!canSubmit}>
-            {pending ? "Creating..." : "Create account"}
-          </Button>
-        </form>
-      </Card>
-
-      <p className="mt-4 text-center text-sm text-fg-muted">
-        Already have an account?{" "}
-        <Link className="font-medium text-accent-soft hover:text-accent hover:underline" to="/login">
-          Sign in
-        </Link>
-      </p>
-    </div>
+        <Button type="submit" disabled={!canSubmit}>
+          {pending ? "Creating..." : "Create account"}
+        </Button>
+      </form>
+    </AuthScreen>
   );
 }

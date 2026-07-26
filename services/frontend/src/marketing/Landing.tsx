@@ -1,7 +1,6 @@
-// Public marketing landing at `/` (spec: portfolio-facing entry point). Always
-// viewable — logged-in users get "Open studio" CTAs instead of sign-up prompts via
-// useAuth(). Fully self-contained: no external assets, images, or CDNs; all classes
-// come from the design tokens so it purges/themes with the rest of the app.
+// Public marketing landing at `/` — always viewable; logged-in users get "Open studio"
+// CTAs instead of sign-up prompts (via useAuth). Self-contained: no external assets, all
+// classes come from the design tokens so it themes/purges with the rest of the app.
 
 import { Link } from "react-router-dom";
 import type { ReactNode } from "react";
@@ -81,15 +80,11 @@ function PipelineDiagram() {
   const finalX = 420;
   const briefY = 160;
   const voiceY = 300;
-  const nodes = [
-    ...shotYs.map((y) => ({ x: shotX, y })),
-    { x: shotX, y: voiceY },
-  ];
+  const nodes = [...shotYs.map((y) => ({ x: shotX, y })), { x: shotX, y: voiceY }];
 
   return (
     <div className="rounded-xl border bg-surface-raised p-6">
       <svg viewBox="0 0 480 320" className="h-auto w-full" role="img" aria-label="Pipeline DAG">
-        {/* edges: static rails + animated flow overlays */}
         {nodes.map((n, i) => {
           const d = `M ${briefX + 14} ${briefY} C ${(briefX + n.x) / 2} ${briefY}, ${(briefX + n.x) / 2} ${n.y}, ${n.x - 14} ${n.y}`;
           return (
@@ -125,9 +120,23 @@ function PipelineDiagram() {
           );
         })}
 
-        {/* brief node */}
-        <circle cx={briefX} cy={briefY} r="14" fill="rgb(var(--color-surface-overlay))" stroke="rgb(var(--color-accent-soft))" strokeWidth="2" />
-        <text x={briefX} y={briefY + 30} textAnchor="middle" className="text-[10px]" fill="rgb(var(--color-fg-subtle))">brief</text>
+        <circle
+          cx={briefX}
+          cy={briefY}
+          r="14"
+          fill="rgb(var(--color-surface-overlay))"
+          stroke="rgb(var(--color-accent-soft))"
+          strokeWidth="2"
+        />
+        <text
+          x={briefX}
+          y={briefY + 30}
+          textAnchor="middle"
+          className="text-[10px]"
+          fill="rgb(var(--color-fg-subtle))"
+        >
+          brief
+        </text>
 
         {/* shot + voiceover nodes: one done (green), one rendering (blue pulse), rest pending */}
         {shotYs.map((y, i) => {
@@ -149,19 +158,52 @@ function PipelineDiagram() {
                 strokeWidth="2"
                 className={rendering ? "animate-node-pulse" : undefined}
               />
-              <text x={shotX + 20} y={y + 4} className="text-[10px]" fill="rgb(var(--color-fg-subtle))">
+              <text
+                x={shotX + 20}
+                y={y + 4}
+                className="text-[10px]"
+                fill="rgb(var(--color-fg-subtle))"
+              >
                 {`shot-0${i + 1}`}
               </text>
             </g>
           );
         })}
-        <circle cx={shotX} cy={voiceY} r="12" fill="rgb(var(--color-surface-overlay))" stroke="rgb(var(--color-accent-soft))" strokeWidth="2" />
-        <text x={shotX + 20} y={voiceY + 4} className="text-[10px]" fill="rgb(var(--color-fg-subtle))">voiceover</text>
+        <circle
+          cx={shotX}
+          cy={voiceY}
+          r="12"
+          fill="rgb(var(--color-surface-overlay))"
+          stroke="rgb(var(--color-accent-soft))"
+          strokeWidth="2"
+        />
+        <text
+          x={shotX + 20}
+          y={voiceY + 4}
+          className="text-[10px]"
+          fill="rgb(var(--color-fg-subtle))"
+        >
+          voiceover
+        </text>
 
-        {/* final cut node with a play glyph */}
-        <circle cx={finalX} cy={briefY} r="18" fill="rgb(var(--color-surface-overlay))" stroke="rgb(var(--color-accent))" strokeWidth="2" />
+        <circle
+          cx={finalX}
+          cy={briefY}
+          r="18"
+          fill="rgb(var(--color-surface-overlay))"
+          stroke="rgb(var(--color-accent))"
+          strokeWidth="2"
+        />
         <path d={`M ${finalX - 5} ${briefY - 7} v 14 l 11 -7 z`} fill="rgb(var(--color-accent))" />
-        <text x={finalX} y={briefY + 34} textAnchor="middle" className="text-[10px]" fill="rgb(var(--color-fg-subtle))">final.mp4</text>
+        <text
+          x={finalX}
+          y={briefY + 34}
+          textAnchor="middle"
+          className="text-[10px]"
+          fill="rgb(var(--color-fg-subtle))"
+        >
+          final.mp4
+        </text>
       </svg>
     </div>
   );
@@ -183,9 +225,9 @@ function Hero() {
             <span className="text-accent-soft">One film out.</span>
           </h1>
           <p className="mt-6 max-w-xl text-lg text-fg-muted">
-            Describe a film in a single brief. AI agents build the world, write the script,
-            and plan every shot. You approve the plan — then a distributed worker fleet renders
-            it in parallel and hands you a narrated MP4.
+            Describe a film in a single brief. AI agents build the world, write the script, and plan
+            every shot. You approve the plan — then a distributed worker fleet renders it in
+            parallel and hands you a narrated MP4.
           </p>
           <div className="mt-8 flex flex-wrap items-center gap-3">
             {user ? (
@@ -255,7 +297,16 @@ function HowItWorks() {
 // A minimal glyph set — simple line icons in currentColor (text-accent-soft).
 function Glyph({ path }: { path: ReactNode }) {
   return (
-    <svg viewBox="0 0 24 24" className="h-5 w-5 text-accent-soft" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <svg
+      viewBox="0 0 24 24"
+      className="h-5 w-5 text-accent-soft"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
       {path}
     </svg>
   );
@@ -268,27 +319,52 @@ const FEATURES = [
     body: "Every plan stops at an approval gate: a rendered summary beside the raw package JSON, schema-validated as you type. You're the executive producer.",
   },
   {
-    glyph: <><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 3" /></>,
+    glyph: (
+      <>
+        <circle cx="12" cy="12" r="9" />
+        <path d="M12 7v5l3 3" />
+      </>
+    ),
     title: "Live execution view",
     body: "Server-sent events stream every node the moment it changes — in flight, queued, succeeded, failed, dead-lettered.",
   },
   {
-    glyph: <><circle cx="12" cy="12" r="9" /><path d="M12 7v10M9.5 9.5a2.5 2 0 015 0c0 2.5-5 1-5 4a2.5 2 0 005 0" /></>,
+    glyph: (
+      <>
+        <circle cx="12" cy="12" r="9" />
+        <path d="M12 7v10M9.5 9.5a2.5 2 0 015 0c0 2.5-5 1-5 4a2.5 2 0 005 0" />
+      </>
+    ),
     title: "Cost you can see",
     body: "Per-shot estimates before you approve, actuals as they land, and a budget gate that stops dispatch before overspend.",
   },
   {
-    glyph: <><circle cx="6" cy="12" r="2" /><circle cx="18" cy="6" r="2" /><circle cx="18" cy="18" r="2" /><path d="M8 12h4M16 7l-4 4M16 17l-4-4" /></>,
+    glyph: (
+      <>
+        <circle cx="6" cy="12" r="2" />
+        <circle cx="18" cy="6" r="2" />
+        <circle cx="18" cy="18" r="2" />
+        <path d="M8 12h4M16 7l-4 4M16 17l-4-4" />
+      </>
+    ),
     title: "Parallel by design",
     body: "Shots render concurrently across a worker fleet; the DAG's critical path — not the shot count — sets the wall-clock floor.",
   },
   {
-    glyph: <path d="M12 9v4M12 17h.01M10.3 4.3L2.6 18a2 2 0 001.7 3h15.4a2 2 0 001.7-3L13.7 4.3a2 2 0 00-3.4 0z" />,
+    glyph: (
+      <path d="M12 9v4M12 17h.01M10.3 4.3L2.6 18a2 2 0 001.7 3h15.4a2 2 0 001.7-3L13.7 4.3a2 2 0 00-3.4 0z" />
+    ),
     title: "Fails loud, retries quiet",
     body: "Transient provider errors back off and retry automatically; permanent ones dead-letter with the error in view, never lost.",
   },
   {
-    glyph: <><path d="M4 7V5a1 1 0 011-1h14a1 1 0 011 1v2" /><rect x="3" y="7" width="18" height="12" rx="2" /><path d="M8 12h8" /></>,
+    glyph: (
+      <>
+        <path d="M4 7V5a1 1 0 011-1h14a1 1 0 011 1v2" />
+        <rect x="3" y="7" width="18" height="12" rx="2" />
+        <path d="M8 12h8" />
+      </>
+    ),
     title: "A $0 dev mode",
     body: "Mock mode swaps every paid provider for a stub and runs the full pipeline offline — same UI, same DAG, no keys, no spend.",
   },
@@ -298,7 +374,9 @@ function Features() {
   return (
     <section className="border-t border-border">
       <div className="mx-auto max-w-6xl px-6 py-20">
-        <h2 className="text-3xl font-semibold tracking-tight">Built like a studio, run like a system</h2>
+        <h2 className="text-3xl font-semibold tracking-tight">
+          Built like a studio, run like a system
+        </h2>
         <div className="mt-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {FEATURES.map((f) => (
             <div key={f.title} className="rounded-xl border bg-surface-raised p-5">
@@ -380,9 +458,15 @@ function Footer() {
           <span>AI Film Pipeline — a distributed-systems portfolio project.</span>
         </div>
         <div className="flex items-center gap-4">
-          <a href="#how-it-works" className="hover:text-fg">How it works</a>
-          <Link to="/login" className="hover:text-fg">Sign in</Link>
-          <Link to="/register" className="hover:text-fg">Create account</Link>
+          <a href="#how-it-works" className="hover:text-fg">
+            How it works
+          </a>
+          <Link to="/login" className="hover:text-fg">
+            Sign in
+          </Link>
+          <Link to="/register" className="hover:text-fg">
+            Create account
+          </Link>
         </div>
       </div>
     </footer>

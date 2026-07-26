@@ -1,6 +1,5 @@
-// Submit screen (spec §9.2): premise + duration + style + voice -> POST /briefs.
-// On 202 the planning tier has accepted an async job; route to /planning/:jobId to
-// follow its progress, which redirects to the checkpoint when the package is ready.
+// Submit screen: premise + duration + style + voice -> POST /briefs. The 202
+// accepts an async planning job; route to /planning/:jobId to follow it to the checkpoint.
 
 import { useState, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
@@ -8,8 +7,8 @@ import { useMutation } from "@tanstack/react-query";
 import { submitBrief, type Brief } from "@/api/client";
 import { Button, Card, ErrorBanner, Field, controlClass } from "@/components/ui";
 
-// A small curated voice list (ElevenLabs default voice ids). The mock ignores the
-// pick; a real run threads it into the voiceover node.
+// Curated ElevenLabs default voice ids. The mock ignores the pick; a real run threads it
+// into the voiceover node.
 const VOICES = [
   { id: "", name: "Default narrator" },
   { id: "21m00Tcm4TlvDq8ikWAM", name: "Rachel (warm, female)" },
@@ -23,8 +22,8 @@ const DURATIONS = [30, 60, 90, 120];
 export default function Submit() {
   const navigate = useNavigate();
   const [premise, setPremise] = useState("");
-  // Default to 30s: cheapest full end-to-end exercise (~10 shots) for test runs;
-  // bump to 90s for a flagship render once the path is proven.
+  // 30s is the cheapest full end-to-end exercise (~10 shots) for test runs; bump to 90s for
+  // a flagship render once the path is proven.
   const [duration, setDuration] = useState(30);
   const [style, setStyle] = useState("");
   const [voiceId, setVoiceId] = useState("");
@@ -113,7 +112,9 @@ export default function Submit() {
             </Field>
           </div>
 
-          {mutation.isError && <ErrorBanner title="Could not submit brief" error={mutation.error} />}
+          {mutation.isError && (
+            <ErrorBanner title="Could not submit brief" error={mutation.error} />
+          )}
 
           <div className="flex items-center gap-3">
             <Button type="submit" disabled={!premise.trim() || mutation.isPending}>

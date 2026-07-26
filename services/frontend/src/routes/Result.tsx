@@ -1,9 +1,7 @@
-// Result screen (spec §9.2): the final cut + a per-node cost breakdown. final_url
-// lives in live run state (not the package spec), so we read it from the SSE stream
-// (a completed run emits one frame carrying it); the package GET supplies per-node
-// costs overlaid from the live node hashes.
+// Result screen: the final cut + a per-node cost breakdown. final_url lives in
+// live run state (not the package spec), so we read it from the SSE stream — a completed
+// run emits one frame carrying it; per-node costs come from the package GET.
 
-import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -16,33 +14,22 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { getPackage, openEvents, type StatusEvent } from "@/api/client";
+import { getPackage } from "@/api/client";
+import { useStatusStream } from "@/hooks/useStatusStream";
 import { actualTotalUsd, videoShots } from "@/lib/package";
 import { formatDuration, formatUsd } from "@/lib/format";
 import { EmptyState, Spinner, Stat } from "@/components/ui";
 
 export default function Result() {
   const { projectId = "" } = useParams();
-  const [event, setEvent] = useState<StatusEvent | null>(null);
+  // Close the stream once the run completes so a finished run doesn't reconnect-loop.
+  const event = useStatusStream(projectId, true);
 
   const packageQuery = useQuery({
     queryKey: ["package", projectId],
     queryFn: () => getPackage(projectId),
     enabled: Boolean(projectId),
   });
-
-  useEffect(() => {
-    if (!projectId) return;
-    // A finished run emits one frame carrying final_url, then the server closes the
-    // stream; close our side too so EventSource doesn't reconnect-loop on it.
-    const source = openEvents(projectId, {
-      onStatus: (incoming) => {
-        setEvent(incoming);
-        if (incoming.complete) source.close();
-      },
-    });
-    return () => source.close();
-  }, [projectId]);
 
   if (packageQuery.isLoading) return <Spinner label="Loading result..." />;
   const pkg = packageQuery.data;
@@ -80,7 +67,8 @@ export default function Result() {
         </div>
       ) : (
         <EmptyState title="Render not finished yet">
-          The final cut is not available. <Link className="underline" to={`/status/${projectId}`}>
+          The final cut is not available.{" "}
+          <Link className="underline" to={`/status/${projectId}`}>
             Watch execution
           </Link>{" "}
           and this page will fill in when it completes.
@@ -131,7 +119,11 @@ export default function Result() {
                 }}
                 labelStyle={{ color: "#a1a1aa" }}
               />
-              <Legend formatter={(v) => <span style={{ color: "#a1a1aa", fontSize: 12 }}>{v}</span>} />
+              <Legend
+                formatter={(value) => (
+                  <span style={{ color: "#a1a1aa", fontSize: 12 }}>{value}</span>
+                )}
+              />
               <Bar dataKey="estimated" name="Estimated" fill="#3987e5" radius={[0, 4, 4, 0]} />
               <Bar dataKey="actual" name="Actual" fill="#8b5cf6" radius={[0, 4, 4, 0]} />
             </BarChart>

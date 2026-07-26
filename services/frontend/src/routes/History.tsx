@@ -1,12 +1,12 @@
-// History screen (spec §9.2): every persisted run, newest first. Each row links to
-// the most relevant screen for its phase (checkpoint -> status -> result). Backed by
-// GET /packages, polled so phase / cost stay fresh while runs are in flight.
+// History screen: every persisted run, newest first, each row linking to the
+// phase-appropriate screen. Backed by GET /packages, polled so phase/cost stay fresh.
 
 import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { listPackages, type PackageSummary } from "@/api/client";
 import { formatUsd, relativeTime, formatDateTime } from "@/lib/format";
 import { Button, EmptyState, ErrorBanner, PhaseBadge, Spinner } from "@/components/ui";
+import { Panel } from "@/components/Panel";
 
 function destination(summary: PackageSummary): string {
   if (summary.phase === "complete") return `/result/${summary.project_id}`;
@@ -41,7 +41,7 @@ export default function History() {
         )}
 
         {query.data && query.data.length > 0 && (
-          <div className="overflow-hidden rounded-xl border bg-surface-raised">
+          <Panel>
             <table className="w-full text-left text-sm">
               <thead className="bg-surface-overlay text-xs uppercase tracking-wide text-fg-subtle">
                 <tr>
@@ -62,18 +62,23 @@ export default function History() {
                       <div className="font-medium text-fg">{summary.title}</div>
                       <div className="font-mono text-xs text-fg-subtle">{summary.project_id}</div>
                     </td>
-                    <td className="px-4 py-3 text-fg-muted" title={formatDateTime(summary.created_at)}>
+                    <td
+                      className="px-4 py-3 text-fg-muted"
+                      title={formatDateTime(summary.created_at)}
+                    >
                       {relativeTime(summary.created_at)}
                     </td>
                     <td className="px-4 py-3">
                       <PhaseBadge phase={summary.phase} />
                     </td>
-                    <td className="px-4 py-3 text-right tabular-nums">{formatUsd(summary.cost_usd)}</td>
+                    <td className="px-4 py-3 text-right tabular-nums">
+                      {formatUsd(summary.cost_usd)}
+                    </td>
                   </tr>
                 ))}
               </tbody>
             </table>
-          </div>
+          </Panel>
         )}
       </div>
     </div>
