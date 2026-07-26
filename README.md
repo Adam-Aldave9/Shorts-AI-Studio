@@ -58,4 +58,6 @@ docker compose up --build --scale worker=3
 ```bash
 docker compose up --scale worker=5 -d
 ```
+## Architecture
+
 ![Architecture Diagram](docs/images/system-architecture-overview.png)
