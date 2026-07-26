@@ -42,7 +42,7 @@
 Mock mode runs the whole pipeline end to end with no paid API calls, which is how development and testing are done.
 
 ```bash
-cp .env.example .env      # set MOCK=true and a SECRET_KEY
+cp .env.example .env      # set MOCK=true
 docker compose up --build
 ```
 
