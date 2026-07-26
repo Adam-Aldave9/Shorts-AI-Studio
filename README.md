@@ -1,12 +1,15 @@
 # Shorts AI
 
 - A distributed video generation system that turns a short synopsis into a narrated animated film of 30, 60, or 90 seconds in length.
-- A chain of LLM agents writes the plan: the world and characters, a script, a shot list, the prompt for each shot, and an estimated cost.
-- A human reviews, edits, and approves that plan in the browser before any money is spent.
+- A chain of LLM agents write the plan: the world and characters, a script, a shot list, the prompt for each shot, and an estimated cost.
+- A human reviews, edits, and approves the plan in the browser before any money is spent.
 - A scheduler hands each shot to a fleet of workers, which call image, video, and voice providers in parallel and store the results in S3.
 - A compositor stitches the finished clips and narration into the final cut.
 
-![Architecture Diagram](docs/images/system-architecture-overview.png)
+## Human Checkpoint
+
+- The finished plan opens in a review screen to edit or approve: a form for the prompts, narration, and budget, or a raw JSON editor for everything else.
+- Approving locks the plan and releases it to the scheduler. Edits are refused from then on so a run can't change underneath itself.
 
 ## Job Distribution
 
@@ -14,13 +17,7 @@
 - Shots depend on each other. A clip needs its reference image first, so the plan is a dependency graph rather than a flat list.
 - The scheduler rechecks the dependency graph once a second, looks for shots whose dependencies are all finished, and queues them.
 - Before queueing a shot the scheduler checks the provider's rate limit and the project's remaining budget, so a run cannot overspend or get throttled.
-- If a provider fails temporarily the shot is retried with backoff. If it fails for good, anything depending on it can't continue, and the run stops and asks the user to fix the plan and re-run.
 - When every shot is done, the compositor is handed the timeline exactly once and renders the final video.
-
-## Human Checkpoint
-
-- The finished plan opens in a review screen: a simple form for the prompts, narration, and budget, or a raw JSON editor for everything else. Every save is re-checked against the schema on the server, so a broken plan can never reach the workers.
-- Approving locks the plan and releases it to the scheduler, and edits are refused from then on so a run can't change underneath itself.
 
 ## Technologies
 
@@ -46,7 +43,7 @@ cp .env.example .env      # set MOCK=true
 docker compose up --build
 ```
 
-The frontend is at `http://localhost:5173`. Register an account and submit a synopsis. For a real render, set `MOCK=false` and supply funded provider keys.
+For a real render, set `MOCK=false` and supply funded provider keys.
 
 ## Scaling Workers
 
@@ -61,3 +58,4 @@ docker compose up --build --scale worker=3
 ```bash
 docker compose up --scale worker=5 -d
 ```
+![Architecture Diagram](docs/images/system-architecture-overview.png)
