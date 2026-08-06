@@ -1,7 +1,6 @@
-// Route guard: renders the protected tree only when authenticated. While the session
-// is still being bootstrapped we show a spinner (avoids a flash of the login screen
-// for an already-logged-in user); once known, an unauthenticated user is redirected
-// to /login with their intended location remembered for post-login return.
+// Route guard: renders the protected tree only when authenticated. While the session is
+// still bootstrapping we show a spinner (avoids a login-screen flash for a logged-in user);
+// an unauthenticated user is redirected to /login with their location remembered for return.
 
 import { Navigate, Outlet, useLocation } from "react-router-dom";
 import { useAuth } from "@/auth/AuthContext";

@@ -1,38 +1,28 @@
-// Checkpoint screen (spec §4.3, §9.2) - the human-in-the-loop gate that cannot be
-// cut. Left pane: a rendered summary of the package the scheduler is serving. Right
-// pane: two views of the same package -
-//   Form           - structured editing of the safe fields (default).
-//   Advanced (JSON) - the raw package in Monaco, schema-validated against GET /schema.
-//
-//   Approve -> (auto-save any unsaved edits) POST /approve, then route to Status.
-//   Save    -> PUT /packages/{id}; the server re-runs the validator and returns 422
-//              with the failing rules, shown inline.
-//   Reject  -> discard (leave it unapproved) and go back to History.
-//
-// Once the run has started the package is locked (approved-set membership, surfaced by
-// GET /packages/{id}/status): every control goes read-only and Save/Approve disappear.
-// A direct edit/re-approve of a locked package 409s; we treat that as "run started".
+// Checkpoint screen — the human-in-the-loop gate. Left: a read-only
+// summary of the package the scheduler is serving. Right: two editors over the same
+// package — a structured Form (default) and the raw JSON in Monaco (schema-validated).
+// Approve auto-saves pending edits, then routes to Status. Once the run starts the package
+// locks (GET .../status `approved`): controls go read-only and a stale edit/approve 409s.
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Editor, { useMonaco } from "@monaco-editor/react";
 import {
-  ApiError,
   approvePackage,
   getPackage,
   getPackageSchema,
   getPackageStatus,
+  isConflict,
   updatePackage,
   type ProductionPackage,
 } from "@/api/client";
-import { estimatedTotalUsd, shotDurationS, videoShots, voiceovers } from "@/lib/package";
-import { formatDuration, formatUsd } from "@/lib/format";
-import { Button, Card, ErrorBanner, Spinner, Stat, SuccessBanner, cn } from "@/components/ui";
+import { Button, ErrorBanner, Spinner, SuccessBanner, cn } from "@/components/ui";
+import { PackageSummary } from "@/components/PackageSummary";
 import PackageEditForm from "@/components/PackageEditForm";
 
-// Monaco's JSON `jsonDefaults` is not surfaced by the loader's slim types (the
-// monaco-editor package types aren't resolved), so narrow to just what we call.
+// Monaco's JSON `jsonDefaults` isn't surfaced by the loader's slim types, so narrow to
+// just the method we call.
 interface JsonLanguageDefaults {
   setDiagnosticsOptions(options: {
     validate?: boolean;
@@ -64,8 +54,8 @@ export default function Checkpoint() {
   const [parseError, setParseError] = useState<string | null>(null);
   const initializedFor = useRef<string | null>(null);
 
-  // The form's current merged package + dirtiness, kept in a ref so keystrokes don't
-  // re-render Checkpoint. Source of truth stays the cached package; this is a live view.
+  // The form's merged package + dirtiness, kept in a ref so keystrokes don't re-render
+  // Checkpoint. The cached package stays the source of truth; this is a live view.
   const formStateRef = useRef<{ merged: ProductionPackage; dirty: boolean }>({
     merged: packageQuery.data ?? ({} as ProductionPackage),
     dirty: false,
@@ -74,8 +64,8 @@ export default function Checkpoint() {
     formStateRef.current = { merged, dirty };
   }, []);
 
-  // Seed the Monaco editor once per project, then leave it under user control. The
-  // save mutation re-seeds it from the server's canonical copy on success.
+  // Seed Monaco once per project, then leave it under user control; the save mutation
+  // re-seeds it from the server's canonical copy on success.
   useEffect(() => {
     if (packageQuery.data && initializedFor.current !== projectId) {
       setDraft(JSON.stringify(packageQuery.data, null, 2));
@@ -83,7 +73,7 @@ export default function Checkpoint() {
     }
   }, [packageQuery.data, projectId]);
 
-  // Wire the served JSON schema into Monaco so edits get live validation feedback.
+  // Wire the served JSON schema into Monaco for live validation feedback.
   useEffect(() => {
     if (!monaco || !schemaQuery.data) return;
     const json = (monaco.languages as unknown as { json?: { jsonDefaults: JsonLanguageDefaults } })
@@ -101,7 +91,7 @@ export default function Checkpoint() {
       navigate(`/status/${projectId}`);
     },
     onError: (error) => {
-      if (error instanceof ApiError && error.status === 409) {
+      if (isConflict(error)) {
         queryClient.invalidateQueries({ queryKey: ["packageStatus", projectId] });
       }
     },
@@ -110,13 +100,13 @@ export default function Checkpoint() {
   const saveMutation = useMutation({
     mutationFn: (pkg: ProductionPackage) => updatePackage(projectId, pkg),
     onSuccess: (saved) => {
-      // Re-seed both views from the server's canonical copy (identity change re-seeds
-      // the form; we rewrite the Monaco draft explicitly).
+      // Re-seed both views from the server's canonical copy: the identity change re-seeds
+      // the form, and we rewrite the Monaco draft explicitly.
       queryClient.setQueryData(["package", projectId], saved);
       setDraft(JSON.stringify(saved, null, 2));
     },
     onError: (error) => {
-      if (error instanceof ApiError && error.status === 409) {
+      if (isConflict(error)) {
         queryClient.invalidateQueries({ queryKey: ["packageStatus", projectId] });
       }
     },
@@ -129,11 +119,8 @@ export default function Checkpoint() {
   const pkg = packageQuery.data;
   if (!pkg) return <ErrorBanner title="Package not found" error={`No package ${projectId}`} />;
 
-  const shots = videoShots(pkg);
-  const narration = voiceovers(pkg)[0]?.text ?? null;
   const busy = approveMutation.isPending || saveMutation.isPending;
 
-  /** Parse the Monaco draft into a package, surfacing parse errors in the banner. */
   function parseMonaco(): ProductionPackage | null {
     setParseError(null);
     try {
@@ -155,7 +142,7 @@ export default function Checkpoint() {
   }
 
   // Approve, saving any pending edits first — a 422 there blocks approval with the
-  // validator banner explaining why. Uses mutateAsync so approve only runs on save ok.
+  // validator banner. mutateAsync so approve only runs once the save succeeds.
   async function onApprove() {
     if (locked) return;
     const dirty = advanced ? draft !== JSON.stringify(pkg, null, 2) : formStateRef.current.dirty;
@@ -171,16 +158,15 @@ export default function Checkpoint() {
     approveMutation.mutate();
   }
 
-  // Toggle the right-pane view. Switching carries pending edits across so neither view
-  // silently drops them; the visible editor is always the authoritative one.
+  // Switching views carries pending edits across so neither view silently drops them; the
+  // visible editor is always the authoritative one.
   function switchToAdvanced() {
-    // Form -> Advanced: serialize the form's pending edits into the Monaco draft.
     setDraft(JSON.stringify(formStateRef.current.merged, null, 2));
     setAdvanced(true);
   }
   function switchToForm() {
-    // Advanced -> Form: the form re-seeds from the cached package, so the Monaco edits
-    // must be committed there first. Block the switch on invalid JSON.
+    // The form re-seeds from the cached package, so commit the Monaco edits there first;
+    // block the switch on invalid JSON.
     const parsed = parseMonaco();
     if (!parsed) return;
     queryClient.setQueryData(["package", projectId], parsed);
@@ -229,75 +215,8 @@ export default function Checkpoint() {
       )}
 
       <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-2">
-        {/* Left: rendered summary */}
-        <div className="space-y-4">
-          <div className="grid grid-cols-3 gap-3">
-            <Stat label="Shots" value={shots.length} />
-            <Stat label="Est. cost" value={formatUsd(estimatedTotalUsd(pkg))} />
-            <Stat label="Budget" value={formatUsd(pkg.meta.budget_usd)} />
-          </div>
+        <PackageSummary pkg={pkg} />
 
-          <Card>
-            <dl className="grid grid-cols-3 gap-y-2 text-sm">
-              <dt className="text-fg-subtle">Duration</dt>
-              <dd className="col-span-2">{formatDuration(pkg.meta.target_duration_s)}</dd>
-              <dt className="text-fg-subtle">Style</dt>
-              <dd className="col-span-2">{pkg.meta.style}</dd>
-              <dt className="text-fg-subtle">Aspect</dt>
-              <dd className="col-span-2">{pkg.meta.aspect_ratio}</dd>
-              <dt className="text-fg-subtle">Premise</dt>
-              <dd className="col-span-2 text-fg-muted">{pkg.meta.premise}</dd>
-            </dl>
-          </Card>
-
-          {narration && (
-            <Card>
-              <div className="text-xs uppercase tracking-wide text-fg-subtle">Narration</div>
-              <p className="mt-2 whitespace-pre-wrap text-sm text-fg-muted">{narration}</p>
-            </Card>
-          )}
-
-          <div className="overflow-hidden rounded-xl border bg-surface-raised">
-            <div className="bg-surface-overlay px-4 py-2 text-xs uppercase tracking-wide text-fg-subtle">
-              Shot list
-            </div>
-            <div className="max-h-80 overflow-auto">
-              <table className="w-full text-left text-sm">
-                <thead className="sticky top-0 bg-surface-overlay text-xs uppercase tracking-wide text-fg-subtle">
-                  <tr>
-                    <th className="px-4 py-2 font-medium">Node</th>
-                    <th className="px-4 py-2 font-medium">Prompt</th>
-                    <th className="px-4 py-2 text-right font-medium">Dur</th>
-                    <th className="px-4 py-2 text-right font-medium">Est.</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {shots.map((shot) => (
-                    <tr key={shot.node_id} className="border-t align-top">
-                      <td className="px-4 py-2 font-mono text-xs text-fg-subtle">{shot.node_id}</td>
-                      <td className="px-4 py-2 text-fg-muted">
-                        <div className="line-clamp-2">{shot.prompt ?? "-"}</div>
-                        {shot.provider_hint && (
-                          <div className="font-mono text-[10px] text-fg-subtle">
-                            {shot.provider_hint}
-                          </div>
-                        )}
-                      </td>
-                      <td className="px-4 py-2 text-right tabular-nums">
-                        {formatDuration(shotDurationS(shot))}
-                      </td>
-                      <td className="px-4 py-2 text-right tabular-nums">
-                        {formatUsd(shot.estimated_cost_usd ?? 0)}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </div>
-
-        {/* Right: editable views (Form default, Advanced JSON escape hatch) */}
         <div className="space-y-3">
           <div className="flex items-center gap-1 rounded-md border border-border bg-surface-raised p-1 text-sm">
             <button
@@ -331,7 +250,7 @@ export default function Checkpoint() {
           {saveMutation.isError && (
             <ErrorBanner
               title={
-                saveMutation.error instanceof ApiError && saveMutation.error.status === 409
+                isConflict(saveMutation.error)
                   ? "Run already started — package is locked"
                   : "Validation failed"
               }
@@ -341,7 +260,7 @@ export default function Checkpoint() {
           {approveMutation.isError && (
             <ErrorBanner
               title={
-                approveMutation.error instanceof ApiError && approveMutation.error.status === 409
+                isConflict(approveMutation.error)
                   ? "Run already started — package is locked"
                   : "Could not approve"
               }

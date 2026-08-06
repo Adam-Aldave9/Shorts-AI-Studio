@@ -1,27 +1,22 @@
-// Typed client for the planning + scheduler services.
-//
-// Request/response shapes come straight from the OpenAPI-generated types
-// (`npm run gen:api` -> planning.d.ts / scheduler.d.ts), so they stay in lockstep
-// with the FastAPI/Pydantic models with no manual sync (spec §3.1, §9.1). The lone
-// exception is the SSE status frame, hand-typed below.
+// Typed client for the planning + scheduler services. Request/response shapes come from
+// the OpenAPI-generated types (`npm run gen:api`), so they track the FastAPI models with
+// no manual sync; the SSE frames below are the one hand-typed exception.
 
 import type { components as PlanningComponents } from "./planning";
 import type { components as SchedulerComponents } from "./scheduler";
 
-// Same-origin proxy paths by default (nginx in prod, the Vite dev-server proxy in
-// dev). Same-origin is what keeps the session cookie first-party.
-export const PLANNING_URL = import.meta.env.VITE_PLANNING_URL ?? "/api/planning";
-export const SCHEDULER_URL = import.meta.env.VITE_SCHEDULER_URL ?? "/api/scheduler";
+// Same-origin proxy paths (nginx in prod, the Vite dev proxy in dev) keep the session
+// cookie first-party.
+const PLANNING_URL = import.meta.env.VITE_PLANNING_URL ?? "/api/planning";
+const SCHEDULER_URL = import.meta.env.VITE_SCHEDULER_URL ?? "/api/scheduler";
 
-// --- Generated model types, re-exported for the screens to consume ---
 export type Brief = PlanningComponents["schemas"]["Brief"];
 export type ProductionPackage = SchedulerComponents["schemas"]["ProductionPackage"];
 export type PackageSummary = SchedulerComponents["schemas"]["PackageSummary"];
 export type Asset = SchedulerComponents["schemas"]["Asset"];
 
-/** A non-2xx response. `detail` carries the server's `detail` field when present
- *  — for the scheduler's 422 it is the validator's error list, shown inline at
- *  the checkpoint (spec §4.3). */
+/** A non-2xx response. For the scheduler's 422, `detail` is the validator's error list,
+ *  rendered inline at the checkpoint. */
 export class ApiError extends Error {
   constructor(
     readonly status: number,
@@ -32,13 +27,18 @@ export class ApiError extends Error {
   }
 }
 
-/** A 401 from any endpoint — the session is missing or expired. The AuthContext
- *  catches this to drop the user back to the login screen. */
+/** A 401 from any endpoint — the session is missing or expired. AuthContext catches this
+ *  to drop the user back to the login screen. */
 export class UnauthorizedError extends ApiError {
   constructor(detail: unknown) {
     super(401, detail);
     this.name = "UnauthorizedError";
   }
+}
+
+/** The scheduler's edit-lock conflict: the run has started, so PUT/approve return 409. */
+export function isConflict(error: unknown): boolean {
+  return error instanceof ApiError && error.status === 409;
 }
 
 async function readError(res: Response): Promise<unknown> {
@@ -50,8 +50,6 @@ async function readError(res: Response): Promise<unknown> {
   }
 }
 
-/** Read a cookie by name (used to echo the readable `afp_csrf` token back in a
- *  header — the double-submit half of the CSRF defense). */
 function readCookie(name: string): string | null {
   const match = document.cookie.match(new RegExp(`(?:^|; )${name}=([^;]*)`));
   return match ? decodeURIComponent(match[1]) : null;
@@ -66,8 +64,8 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
     "Content-Type": "application/json",
     ...(init?.headers as Record<string, string> | undefined),
   };
-  // Attach the CSRF token on unsafe methods; the server constant-time compares it to
-  // the session's token.
+  // Double-submit CSRF: echo the readable `afp_csrf` cookie back in a header on unsafe
+  // methods; the server constant-time compares it to the session's token.
   if (!SAFE_METHODS.has(method)) {
     const token = readCookie(CSRF_COOKIE);
     if (token) headers["X-CSRF-Token"] = token;
@@ -82,18 +80,11 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
     if (res.status === 401) throw new UnauthorizedError(detail);
     throw new ApiError(res.status, detail);
   }
-  // 204 No Content (e.g. logout) has no body to parse.
   if (res.status === 204) return undefined as T;
   return (await res.json()) as T;
 }
 
-// --- Auth: register / login / logout / session bootstrap ---
-//
-// All go through the scheduler origin (either service works — they share the session
-// layer), same-origin, credentialed. Login/register set the cookies; the SPA reads
-// its auth state from `getMe`.
-
-/** The public view of the signed-in account (matches the backend `UserOut`). */
+/** The signed-in account (matches the backend `UserOut`). */
 export interface AuthUser {
   user_id: string;
   username: string;
@@ -121,17 +112,9 @@ export function getMe(): Promise<AuthUser> {
   return request<AuthUser>(`${SCHEDULER_URL}/auth/me`);
 }
 
-/** Prime the readable `afp_csrf` cookie for the session (used after a reload). */
-export function fetchCsrf(): Promise<{ csrf: string | null }> {
-  return request<{ csrf: string | null }>(`${SCHEDULER_URL}/auth/csrf`);
-}
-
-// --- Planning service: Submit + the Monaco JSON schema (spec §9.2) ---
-
-/** The 202 body from `POST /briefs`: planning now runs as an async in-process job the
- *  client follows over SSE. Hand-typed (like {@link PlanningEvent}) — the frame is
- *  simple and this avoids a gen:api round-trip for the new contract. */
-export interface PlanningJobAccepted {
+/** The 202 body from `POST /briefs`: planning runs as an async job the client follows
+ *  over SSE. Hand-typed like the SSE frames. */
+interface PlanningJobAccepted {
   job_id: string;
 }
 
@@ -145,8 +128,6 @@ export function submitBrief(brief: Brief): Promise<PlanningJobAccepted> {
 export function getPackageSchema(): Promise<Record<string, unknown>> {
   return request<Record<string, unknown>>(`${PLANNING_URL}/schema`);
 }
-
-// --- Scheduler service: Checkpoint / Status / Result / History (spec §9.2) ---
 
 export function listPackages(): Promise<PackageSummary[]> {
   return request<PackageSummary[]>(`${SCHEDULER_URL}/packages`);
@@ -172,11 +153,9 @@ export function approvePackage(projectId: string): Promise<{ status: string }> {
   });
 }
 
-/** Editability of a package (matches the scheduler's `PackageStatus`). Hand-typed
- *  like the SSE frames — kept off the generated `ProductionPackage` schema so the
- *  seam contract stays clean. `approved` is the authoritative edit lock; once true
- *  the run has started and PUT/approve return 409. */
-export interface PackageStatus {
+/** Editability of a package. `approved` is the authoritative edit lock: once true the run
+ *  has started and PUT/approve return 409. */
+interface PackageStatus {
   project_id: string;
   approved: boolean;
   phase: string | null;
@@ -186,11 +165,25 @@ export function getPackageStatus(projectId: string): Promise<PackageStatus> {
   return request<PackageStatus>(`${SCHEDULER_URL}/packages/${projectId}/status`);
 }
 
-// --- SSE: live run status for the Status screen ---
-//
-// Hand-typed against `_status_event` in scheduler/scheduler/main.py: OpenAPI
-// cannot describe SSE frame bodies, so this is the one place that needs manual
-// sync with the backend.
+// SSE frame bodies can't be described by OpenAPI, so the shapes below are hand-typed
+// against the backend emitters and must be kept in sync with them.
+
+interface SseHandlers<T> {
+  onStatus: (event: T) => void;
+  onError?: (event: Event) => void;
+}
+
+// `withCredentials` sends the session cookie on the SSE connection — EventSource cannot
+// set an Authorization header, which is why the auth model is cookie-based. The backend
+// emits named `status` frames and closes the stream itself at a terminal state.
+function openSse<T>(url: string, handlers: SseHandlers<T>): EventSource {
+  const source = new EventSource(url, { withCredentials: true });
+  source.addEventListener("status", (event) => {
+    handlers.onStatus(JSON.parse((event as MessageEvent).data) as T);
+  });
+  if (handlers.onError) source.addEventListener("error", handlers.onError);
+  return source;
+}
 
 /** One DAG node's live state within a {@link StatusEvent}. */
 export interface SseNode {
@@ -199,7 +192,7 @@ export interface SseNode {
   error: string | null;
 }
 
-/** The `status` SSE frame streamed from `GET /packages/{id}/events`. */
+/** The `status` frame from `GET /packages/{id}/events` (scheduler `_status_event`). */
 export interface StatusEvent {
   project_id: string;
   phase: string | null;
@@ -210,41 +203,13 @@ export interface StatusEvent {
   complete: boolean;
 }
 
-export interface EventsHandlers {
-  onStatus: (event: StatusEvent) => void;
-  onError?: (event: Event) => void;
+/** Subscribe to a run's live status stream; `.close()` the returned source on unmount. */
+export function openEvents(projectId: string, handlers: SseHandlers<StatusEvent>): EventSource {
+  return openSse(`${SCHEDULER_URL}/packages/${projectId}/events`, handlers);
 }
 
-/**
- * Subscribe to the run's live status stream. Returns the `EventSource` so the
- * caller can `.close()` it on unmount. The backend emits named `status` frames
- * and closes the stream itself once the run reaches a terminal phase, after the
- * compositor has set `final_url`.
- */
-export function openEvents(projectId: string, handlers: EventsHandlers): EventSource {
-  // `withCredentials` sends the session cookie on the SSE connection — EventSource
-  // cannot set an Authorization header, which is exactly why the auth model is
-  // cookie-based. Same-origin means the cookie flows automatically.
-  const source = new EventSource(`${SCHEDULER_URL}/packages/${projectId}/events`, {
-    withCredentials: true,
-  });
-  source.addEventListener("status", (event) => {
-    handlers.onStatus(JSON.parse((event as MessageEvent).data) as StatusEvent);
-  });
-  if (handlers.onError) {
-    source.addEventListener("error", handlers.onError);
-  }
-  return source;
-}
-
-// --- SSE: planning-job progress for the Planning screen ---
-//
-// Hand-typed against `get_plan_job` in libs/state/state/store.py (surfaced by the
-// planning service's `/jobs/{id}/events` route): OpenAPI cannot describe SSE bodies.
-
-/** The `status` SSE frame streamed from `GET /jobs/{jobId}/events`. `stage` is the
- *  chain step in progress (one of the graph's `STAGE_SEQUENCE`); `project_id` is set
- *  only on `succeeded`, `errors` only on `failed`. */
+/** The `status` frame from `GET /jobs/{jobId}/events`. `stage` is the live chain step;
+ *  `project_id` is set only on `succeeded`, `errors` only on `failed`. */
 export interface PlanningEvent {
   job_id: string;
   status: "queued" | "running" | "succeeded" | "failed";
@@ -253,28 +218,10 @@ export interface PlanningEvent {
   errors: string[] | null;
 }
 
-export interface PlanningEventsHandlers {
-  onStatus: (event: PlanningEvent) => void;
-  onError?: (event: Event) => void;
-}
-
-/**
- * Subscribe to a planning job's progress stream. Returns the `EventSource` so the
- * caller can `.close()` it on unmount. The backend emits named `status` frames and
- * closes the stream itself once the job reaches a terminal status.
- */
+/** Subscribe to a planning job's progress stream; `.close()` the source on unmount. */
 export function openPlanningEvents(
   jobId: string,
-  handlers: PlanningEventsHandlers,
+  handlers: SseHandlers<PlanningEvent>,
 ): EventSource {
-  const source = new EventSource(`${PLANNING_URL}/jobs/${jobId}/events`, {
-    withCredentials: true,
-  });
-  source.addEventListener("status", (event) => {
-    handlers.onStatus(JSON.parse((event as MessageEvent).data) as PlanningEvent);
-  });
-  if (handlers.onError) {
-    source.addEventListener("error", handlers.onError);
-  }
-  return source;
+  return openSse(`${PLANNING_URL}/jobs/${jobId}/events`, handlers);
 }

@@ -1,6 +1,5 @@
-// Normalize any thrown value into a list of human-readable lines. The scheduler's
-// 422 carries the validator's `errors` list (an array of strings) in `detail`, so
-// the checkpoint can render each failing rule inline (spec §4.3).
+// Normalize any thrown value into human-readable lines. The scheduler's 422 carries the
+// validator's error list in `detail`, so the checkpoint renders each failing rule inline.
 
 import { ApiError } from "@/api/client";
 
@@ -8,8 +7,8 @@ export function errorToMessages(error: unknown): string[] {
   if (error instanceof ApiError) {
     const { detail } = error;
     if (Array.isArray(detail)) {
-      // Two shapes land here: the scheduler's semantic validator (a list of plain
-      // strings) and FastAPI's request validation (a list of {loc, msg} objects).
+      // Two shapes land here: the scheduler's semantic validator (plain strings) and
+      // FastAPI's request validation (a list of {loc, msg} objects).
       return detail.map((item) => {
         if (typeof item === "string") return item;
         if (item && typeof item === "object" && "msg" in item) {

@@ -6,7 +6,7 @@ import { Logo } from "@/components/Logo";
 const navLinkClass = ({ isActive }: { isActive: boolean }) =>
   isActive ? "font-medium text-fg" : "text-fg-muted hover:text-fg";
 
-// Shell for the internal tool (spec §9).
+// Shell for the internal tool.
 export default function App() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
