@@ -1,6 +1,5 @@
-// Result screen: the final cut + a per-node cost breakdown. final_url lives in
-// live run state (not the package spec), so we read it from the SSE stream — a completed
-// run emits one frame carrying it; per-node costs come from the package GET.
+// Result screen: the final cut + a per-node cost breakdown. `final_url` lives in live run
+// state rather than the package, so it comes from the SSE stream and not the package GET.
 
 import { Link, useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
@@ -43,7 +42,7 @@ export default function Result() {
   }));
 
   return (
-    <div className="space-y-6">
+    <div className="mx-auto max-w-5xl space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold">{pkg?.meta.title ?? "Result"}</h1>

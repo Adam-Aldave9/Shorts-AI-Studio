@@ -1,5 +1,5 @@
-// History screen: every persisted run, newest first, each row linking to the
-// phase-appropriate screen. Backed by GET /packages, polled so phase/cost stay fresh.
+// History screen: every persisted run, newest first, each row linking to the screen for its
+// phase.
 
 import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
@@ -25,7 +25,7 @@ export default function History() {
   });
 
   return (
-    <div>
+    <div className="mx-auto max-w-5xl">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-semibold">History</h1>
         <Button variant="secondary" onClick={() => query.refetch()} disabled={query.isFetching}>
