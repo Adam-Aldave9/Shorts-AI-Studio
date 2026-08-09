@@ -1,12 +1,11 @@
-// Registration screen. Client-side rules mirror the server's Pydantic validators (username
-// 3-32 + charset, password 12-128, confirmation match) so obvious mistakes are caught
-// before a round-trip; the server stays the authority (e.g. 409 on a taken username).
+// The client-side rules below mirror the server's Pydantic validators, which remain the
+// authority — these only save a round-trip.
 
 import { useMemo, useState, type FormEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "@/auth/AuthContext";
 import { useAuthSubmit } from "@/hooks/useAuthSubmit";
-import { Button, ErrorBanner, Field, controlClass } from "@/components/ui";
+import { Button, ErrorBanner, Field, WarningBanner, controlClass } from "@/components/ui";
 import { AuthScreen } from "@/components/AuthScreen";
 
 const USERNAME_RE = /^[a-zA-Z0-9_.-]+$/;
@@ -40,7 +39,7 @@ export default function Register() {
     navigate("/submit", { replace: true });
   });
 
-  // Only surface a client-side rule once the user has typed something in the field.
+  // Each rule waits for its field to be non-empty so an untouched form shows no errors.
   const clientError = useMemo(() => {
     if (username && usernameError(username)) return usernameError(username);
     if (password && passwordError(password)) return passwordError(password);
@@ -102,11 +101,7 @@ export default function Register() {
           />
         </Field>
 
-        {clientError && (
-          <div className="rounded-md border border-warning/30 bg-warning/10 px-4 py-3 text-sm text-warning">
-            {clientError}
-          </div>
-        )}
+        {clientError && <WarningBanner>{clientError}</WarningBanner>}
         {error != null && <ErrorBanner title="Could not create account" error={error} />}
 
         <Button type="submit" disabled={!canSubmit}>

@@ -34,6 +34,10 @@ export default {
           2: "rgb(var(--color-chart-2) / <alpha-value>)",
         },
       },
+      spacing: {
+        // The app header's height, so a sticky bar can offset against it via `top-header`.
+        header: "3.75rem",
+      },
       borderColor: {
         // Makes every existing bare `border` class use the token hairline.
         DEFAULT: "rgb(var(--color-border) / <alpha-value>)",
