@@ -6,7 +6,6 @@ import { Logo } from "@/components/Logo";
 const navLinkClass = ({ isActive }: { isActive: boolean }) =>
   isActive ? "font-medium text-fg" : "text-fg-muted hover:text-fg";
 
-// Shell for the internal tool.
 export default function App() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
@@ -19,7 +18,7 @@ export default function App() {
   return (
     <div className="min-h-screen">
       <header className="sticky top-0 z-10 border-b border-border bg-surface/80 backdrop-blur">
-        <nav className="mx-auto flex max-w-5xl items-center gap-6 px-6 py-3 text-sm">
+        <nav className="mx-auto flex h-header max-w-5xl items-center gap-6 px-6 text-sm">
           <Link to="/">
             <Logo withWordmark />
           </Link>
@@ -37,7 +36,9 @@ export default function App() {
           </div>
         </nav>
       </header>
-      <main className="mx-auto max-w-5xl px-6 py-8">
+      {/* No max-width: routes set their own, since the checkpoint workbench needs more
+          width than the other screens. */}
+      <main className="px-6 py-8">
         <Outlet />
       </main>
     </div>

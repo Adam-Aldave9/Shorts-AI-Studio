@@ -6,6 +6,7 @@ function assetsByType(pkg: ProductionPackage, type: Asset["type"]): Asset[] {
 
 export const videoShots = (pkg: ProductionPackage): Asset[] => assetsByType(pkg, "video");
 export const voiceovers = (pkg: ProductionPackage): Asset[] => assetsByType(pkg, "voiceover");
+export const referenceImages = (pkg: ProductionPackage): Asset[] => assetsByType(pkg, "image");
 
 /** A shot's duration lives in its free-form `spec` (the validator reads `duration_s`). */
 export function shotDurationS(asset: Asset): number {

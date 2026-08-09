@@ -1,6 +1,4 @@
-// Status screen: live DAG view driven by the scheduler's SSE stream. Node
-// pills, cost-to-date, critical-path floor, in-flight / queue depth. On `complete` the
-// compositor has set final_url, so hand off to the Result view.
+// Status screen: live DAG view driven by the scheduler's SSE stream.
 
 import { useEffect } from "react";
 import { Link, useParams } from "react-router-dom";
@@ -19,8 +17,7 @@ export default function Status() {
   const event = useStatusStream(projectId);
   const navigateOnce = useNavigateOnce();
 
-  // Once the compositor has finished, hand off to Result (after briefly showing the
-  // completed state).
+  // Delayed so the completed state is visible before handing off to Result.
   useEffect(() => {
     if (!event?.complete) return;
     const timer = setTimeout(() => navigateOnce(`/result/${projectId}`), 1200);
@@ -34,7 +31,7 @@ export default function Status() {
   const pct = nodes.length ? `${Math.round((done / nodes.length) * 100)}%` : "0%";
 
   return (
-    <div>
+    <div className="mx-auto max-w-5xl">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">
           <h1 className="text-2xl font-semibold">Execution</h1>
