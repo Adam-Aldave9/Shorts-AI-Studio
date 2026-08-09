@@ -20,6 +20,7 @@ import asyncio
 import json
 import logging
 import os
+from concurrent.futures import Future
 from uuid import uuid4
 
 import state
@@ -34,6 +35,7 @@ from sse_starlette.sse import EventSourceResponse
 from planning.graph import STAGE_SEQUENCE, run_planning
 from planning.validator import ValidationReport, validate_package
 
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s")
 log = logging.getLogger("planning")
 
 app = FastAPI(title="AI Film Pipeline — Planning Service", version="1.0.0")
@@ -102,27 +104,55 @@ def _next_stage(completed_node: str) -> str:
     return STAGE_SEQUENCE[min(idx + 1, len(STAGE_SEQUENCE) - 1)]
 
 
+async def _advance(job_id: str, stage: str) -> None:
+    """Move the job to ``stage`` and log how long the outgoing one took — the only
+    per-stage timing measurement in the repo, and what will eventually replace the
+    frontend's guessed ``typicalS`` values with measured ones."""
+    closed = await state.set_plan_stage(job_id, stage)
+    if closed:
+        log.info("planning job %s: stage %s finished in %.1fs", job_id, *closed)
+
+
 async def run_planning_job(job_id: str, brief: dict, user_id: str) -> None:
     """Background runner: drive the planning chain, stream stage progress to Redis, and
     land the job on a terminal status.
 
     The real chain runs on a worker thread (``run_planning`` -> ``asyncio.to_thread``),
-    so ``on_stage`` marshals each Redis write back onto *this* loop via
+    so the callbacks marshal each Redis write back onto *this* loop via
     ``run_coroutine_threadsafe`` — which reuses the per-loop Redis client correctly even
-    though the callback fires from the worker thread. The whole body is guarded so any
-    failure (chain exception or validation) lands as a ``failed`` frame the UI renders.
+    though the callback fires from the worker thread, and is equally safe from the loop's
+    own thread (the mock path) as long as the callback itself never awaits them. The whole
+    body is guarded so any failure (chain exception or validation) lands as a ``failed``
+    frame the UI renders.
     """
     loop = asyncio.get_running_loop()
+    progress: set[Future] = set()
+
+    def spawn(coro) -> None:
+        # Fire-and-forget: progress writes must never block or crash the chain thread.
+        future = asyncio.run_coroutine_threadsafe(coro, loop)
+        progress.add(future)
+        future.add_done_callback(progress.discard)
 
     def on_stage(completed_node: str) -> None:
-        # Fire-and-forget: progress writes must never block or crash the chain thread.
-        asyncio.run_coroutine_threadsafe(
-            state.set_plan_stage(job_id, _next_stage(completed_node)), loop
-        )
+        spawn(_advance(job_id, _next_stage(completed_node)))
+
+    def on_detail(stage: str, detail: dict) -> None:
+        spawn(state.set_plan_detail(job_id, stage, detail))
+
+    async def drain() -> None:
+        """Let queued progress writes land before the terminal frame. Without this a
+        still-pending ``_advance`` could flip ``status`` back to ``running`` *after* the
+        job succeeded — reachable on the mock path, where the callbacks are scheduled
+        from the loop's own thread and so only run once it next yields."""
+        pending = [asyncio.wrap_future(f) for f in list(progress)]
+        if pending:
+            await asyncio.wait(pending)
 
     try:
-        await state.set_plan_stage(job_id, STAGE_SEQUENCE[0])
-        package = await run_planning(brief, on_stage)
+        await _advance(job_id, STAGE_SEQUENCE[0])
+        package = await run_planning(brief, on_stage, on_detail)
+        await drain()
         report: ValidationReport = validate_package(package)
         if not report.ok:
             # Preserves today's 422-detail semantics (the validator error list), now
@@ -136,6 +166,7 @@ async def run_planning_job(job_id: str, brief: dict, user_id: str) -> None:
         await state.set_plan_succeeded(job_id, package.project_id)
     except Exception as exc:  # noqa: BLE001 - any failure must land as a failed frame
         log.exception("planning job %s failed", job_id)
+        await drain()
         await state.set_plan_failed(job_id, [str(exc)])
 
 
@@ -173,6 +204,12 @@ async def job_events(job_id: str) -> EventSourceResponse:
                             "job_id": job_id,
                             "status": state.PLAN_FAILED,
                             "stage": None,
+                            "stage_index": -1,
+                            "stage_count": len(STAGE_SEQUENCE),
+                            "elapsed_s": 0.0,
+                            "stage_elapsed_s": 0.0,
+                            "stage_timings": {},
+                            "details": {},
                             "project_id": None,
                             "errors": ["job expired or no longer exists"],
                         }

@@ -12,6 +12,7 @@ Three layers, none of which touch Anthropic or the LLM stack:
 from __future__ import annotations
 
 import asyncio
+import json
 
 import pytest
 from schema import AssetType, Character, Location, World
@@ -21,7 +22,7 @@ import state
 from planning import main
 from planning.agents import breakdown, prompts, script, world
 from planning.assembly import assemble_package
-from planning.graph import _load_mock_package, run_planning
+from planning.graph import STAGE_SEQUENCE, _load_mock_package, run_planning
 from planning.llm import MODEL_WORLD
 from planning.models import Screenplay, ShotList, ShotPrompts
 from planning.world import load_world
@@ -201,6 +202,49 @@ def test_prompts_build_prompt_injects_canonical_descriptions():
     assert isinstance(parsed, ShotPrompts)
 
 
+def _batch_echo_call(seen: list[int]):
+    """A stand-in ``call`` that answers with exactly the batch it was handed — the
+    prompts agent now calls once per batch, so a fixed canned response would hide the
+    batching entirely."""
+
+    def fake_call(*, model, messages, schema, **kw):
+        shot_ids = [line.split("]")[0].strip(" [") for line in messages[1][1].splitlines()
+                    if line.startswith("  [")]
+        seen.append(len(shot_ids))
+        return ShotPrompts(prompts=[
+            {"shot_id": shot_id, "prompt": f"prompt for {shot_id}",
+             "provider_hint": "fal:pixverse-v6-i2v", "estimated_cost_usd": 0.1}
+            for shot_id in shot_ids
+        ])
+
+    return fake_call
+
+
+def test_prompts_run_batches_shots_and_reports_progress():
+    shots = ShotList(shots=[
+        {"id": f"shot_{i:03d}", "scene_id": "scene_01", "shot_type": "wide",
+         "duration_s": 3, "location_id": "loc_river", "subject_ids": [],
+         "action": f"action {i}"}
+        for i in range(1, 14)
+    ])
+    seen: list[int] = []
+    progress: list[tuple[int, int]] = []
+
+    out = prompts.run(_brief(), shots, _world(), call=_batch_echo_call(seen),
+                      batch_size=6, on_progress=lambda done, total: progress.append((done, total)))
+
+    assert seen == [6, 6, 1]  # 13 shots -> 3 calls, contiguous batches
+    assert [p.shot_id for p in out.prompts] == [s.id for s in shots.shots]  # order preserved
+    assert progress == [(6, 13), (12, 13), (13, 13)]
+
+
+def test_prompts_run_on_empty_shot_list_makes_no_calls():
+    seen: list[int] = []
+    out = prompts.run(_brief(), ShotList(shots=[]), _world(), call=_batch_echo_call(seen))
+    assert seen == []
+    assert out.prompts == []
+
+
 def test_agent_run_uses_injected_call_no_network():
     captured = {}
 
@@ -347,3 +391,91 @@ def test_world_loads_from_disk():
     world = load_world()
     ids = {c.id for c in world.characters} | {l.id for l in world.locations}
     assert "char_jaguar" in ids and "loc_river" in ids
+
+
+# --------------------------------------------------------------------------
+# Stage progress: the mock staged walk, the successor mapping, the SSE generator
+# --------------------------------------------------------------------------
+def test_mock_run_walks_every_stage_with_detail(monkeypatch):
+    monkeypatch.setenv("MOCK", "true")
+    monkeypatch.setenv("MOCK_PLAN_DELAY_S", "0")
+    stages: list[str] = []
+    details: list[tuple[str, dict]] = []
+
+    package = asyncio.run(
+        run_planning(_brief(), stages.append, lambda stage, d: details.append((stage, d)))
+    )
+
+    assert stages == STAGE_SEQUENCE
+    last = dict(details)  # detail is reported per stage; prompts reports repeatedly
+    assert set(last) == set(STAGE_SEQUENCE)
+    # The numbers are read off the hand-authored package, so the mock screen is honest.
+    assert last["world"]["characters"] == [c.name for c in package.world.characters]
+    assert last["breakdown"] == {"shots": 30}
+    assert last["prompts"] == {"done": 30, "total": 30}
+    assert last["assemble"]["nodes"] == len(package.assets)
+    assert last["assemble"]["shots"] == 30
+    # Sub-progress ticks up rather than jumping straight to done.
+    prompt_ticks = [d["done"] for stage, d in details if stage == "prompts"]
+    assert prompt_ticks == sorted(prompt_ticks) and len(prompt_ticks) > 1
+
+
+def test_next_stage_maps_completed_node_to_successor():
+    assert main._next_stage("world") == "script"
+    assert main._next_stage("prompts") == "assemble"
+    # The terminal node has no successor: it reports itself while it assembles.
+    assert main._next_stage("assemble") == "assemble"
+    # An unknown node is surfaced verbatim rather than guessed at.
+    assert main._next_stage("mystery") == "mystery"
+
+
+async def _collect_frames(job_id: str, limit: int = 4) -> list[dict]:
+    response = await main.job_events(job_id)
+    frames: list[dict] = []
+    async for chunk in response.body_iterator:
+        frames.append(json.loads(chunk["data"]))
+        if len(frames) >= limit:
+            break
+    return frames
+
+
+def test_job_events_streams_until_terminal():
+    if fakeredis_aio is None:
+        pytest.skip("fakeredis not installed")
+
+    async def scenario():
+        state.use_client(fakeredis_aio.FakeRedis(decode_responses=True))
+        try:
+            await state.create_plan_job("j_sse", owner_id="user_a")
+            await state.set_plan_stage("j_sse", "prompts")
+            await state.set_plan_detail("j_sse", "prompts", {"done": 12, "total": 30})
+            await state.set_plan_succeeded("j_sse", "p_sse")
+
+            # A terminal job yields exactly one frame, then the generator closes.
+            frames = await _collect_frames("j_sse", limit=4)
+            assert len(frames) == 1
+            assert frames[0]["status"] == state.PLAN_SUCCEEDED
+            assert frames[0]["details"]["prompts"] == {"done": 12, "total": 30}
+            assert frames[0]["stage_index"] == STAGE_SEQUENCE.index("prompts")
+        finally:
+            state.use_client(None)
+
+    asyncio.run(scenario())
+
+
+def test_job_events_reports_expiry_when_the_hash_is_gone():
+    if fakeredis_aio is None:
+        pytest.skip("fakeredis not installed")
+
+    async def scenario():
+        state.use_client(fakeredis_aio.FakeRedis(decode_responses=True))
+        try:
+            frames = await _collect_frames("j_missing", limit=4)
+            assert len(frames) == 1
+            assert frames[0]["status"] == state.PLAN_FAILED
+            assert frames[0]["errors"] == ["job expired or no longer exists"]
+            assert frames[0]["stage_count"] == len(STAGE_SEQUENCE)
+        finally:
+            state.use_client(None)
+
+    asyncio.run(scenario())

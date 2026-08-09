@@ -51,10 +51,15 @@ export default {
           "0%, 100%": { opacity: "0.35" },
           "50%": { opacity: "1" },
         },
+        "progress-sweep": {
+          "0%": { transform: "translateX(-100%)" },
+          "100%": { transform: "translateX(400%)" },
+        },
       },
       animation: {
         "dag-flow": "dag-flow 1.6s linear infinite",
         "node-pulse": "node-pulse 2.4s ease-in-out infinite",
+        "progress-sweep": "progress-sweep 1.6s ease-in-out infinite",
       },
     },
   },

@@ -4,6 +4,7 @@ export { Card } from "./Card";
 export { Field, controlClass } from "./Field";
 export { Stat } from "./Stat";
 export { Spinner } from "./Spinner";
+export { ProgressBar, IndeterminateBar } from "./ProgressBar";
 export { ErrorBanner, SuccessBanner } from "./Banner";
 export { WarningBanner } from "./WarningBanner";
 export { EmptyState } from "./EmptyState";

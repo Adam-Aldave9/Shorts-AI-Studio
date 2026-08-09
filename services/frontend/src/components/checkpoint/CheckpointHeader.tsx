@@ -4,7 +4,7 @@
 import type { ProductionPackage } from "@/api/client";
 import { estimatedTotalUsd, videoShots } from "@/lib/package";
 import { formatDuration, formatUsd } from "@/lib/format";
-import { Button, cn } from "@/components/ui";
+import { Button, ProgressBar, cn } from "@/components/ui";
 
 function budgetFraction(estimate: number, budget: number): number {
   if (!Number.isFinite(budget) || budget <= 0) return estimate > 0 ? 1 : 0;
@@ -88,19 +88,12 @@ export function CheckpointHeader({
         <span className={cn("tabular-nums", over && "text-danger")}>
           {formatUsd(estimate)} of {formatUsd(budget)}
         </span>
-        <div
-          className="h-1.5 w-32 overflow-hidden rounded-full bg-surface-overlay"
-          role="img"
-          aria-label={`Estimated cost ${formatUsd(estimate)} of a ${formatUsd(budget)} budget`}
-        >
-          <div
-            className={cn(
-              "h-full rounded-full transition-all duration-500",
-              over ? "bg-danger" : fraction > 0.9 ? "bg-warning" : "bg-accent",
-            )}
-            style={{ width: `${Math.min(100, Math.round(fraction * 100))}%` }}
-          />
-        </div>
+        <ProgressBar
+          className="w-32"
+          fraction={fraction}
+          tone={over ? "danger" : fraction > 0.9 ? "warning" : "accent"}
+          label={`Estimated cost ${formatUsd(estimate)} of a ${formatUsd(budget)} budget`}
+        />
         <span className="tabular-nums">{Math.round(fraction * 100)}%</span>
       </div>
     </div>

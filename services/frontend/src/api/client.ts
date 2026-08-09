@@ -208,12 +208,35 @@ export function openEvents(projectId: string, handlers: SseHandlers<StatusEvent>
   return openSse(`${SCHEDULER_URL}/packages/${projectId}/events`, handlers);
 }
 
-/** The `status` frame from `GET /jobs/{jobId}/events`. `stage` is the live chain step;
- *  `project_id` is set only on `succeeded`, `errors` only on `failed`. */
+/** What a planning stage produced, as reported by that stage's node. The keys present
+ *  depend on the stage (see `renderDetail` in `components/planning/stages.ts`). */
+export interface PlanningStageDetail {
+  characters?: string[];
+  locations?: string[];
+  title?: string;
+  logline?: string;
+  scenes?: number;
+  shots?: number;
+  nodes?: number;
+  cost_estimate_usd?: number;
+  done?: number;
+  total?: number;
+}
+
+/** The `status` frame from `GET /jobs/{jobId}/events`. `stage` is the live chain step
+ *  (`stage_index` is `-1` when there is none yet); `project_id` is set only on
+ *  `succeeded`, `errors` only on `failed`. Elapsed times are computed server-side, so
+ *  they are immune to clock skew between the browser and the container. */
 export interface PlanningEvent {
   job_id: string;
   status: "queued" | "running" | "succeeded" | "failed";
   stage: string | null;
+  stage_index: number;
+  stage_count: number;
+  elapsed_s: number;
+  stage_elapsed_s: number;
+  stage_timings: Record<string, number>;
+  details: Record<string, PlanningStageDetail>;
   project_id: string | null;
   errors: string[] | null;
 }

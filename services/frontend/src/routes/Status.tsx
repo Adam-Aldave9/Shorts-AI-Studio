@@ -6,7 +6,7 @@ import type { StatusEvent } from "@/api/client";
 import { useStatusStream } from "@/hooks/useStatusStream";
 import { useNavigateOnce } from "@/hooks/useNavigateOnce";
 import { formatDuration, formatUsd } from "@/lib/format";
-import { PhaseBadge, Spinner, StatusBadge, Stat, SuccessBanner } from "@/components/ui";
+import { PhaseBadge, ProgressBar, Spinner, StatusBadge, Stat, SuccessBanner } from "@/components/ui";
 
 function countByStatus(event: StatusEvent, status: string): number {
   return Object.values(event.nodes).filter((node) => node.status === status).length;
@@ -28,7 +28,6 @@ export default function Status() {
 
   const nodes = Object.entries(event.nodes);
   const done = countByStatus(event, "succeeded");
-  const pct = nodes.length ? `${Math.round((done / nodes.length) * 100)}%` : "0%";
 
   return (
     <div className="mx-auto max-w-5xl">
@@ -52,12 +51,11 @@ export default function Status() {
         />
       </div>
 
-      <div className="mt-4 h-1.5 overflow-hidden rounded-full bg-surface-overlay">
-        <div
-          className="h-full rounded-full bg-accent transition-all duration-500"
-          style={{ width: pct }}
-        />
-      </div>
+      <ProgressBar
+        className="mt-4"
+        fraction={nodes.length ? done / nodes.length : 0}
+        label={`${done} of ${nodes.length} nodes rendered`}
+      />
 
       {event.complete && (
         <div className="mt-4">

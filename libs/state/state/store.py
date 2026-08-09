@@ -33,6 +33,7 @@ import asyncio
 import json
 import logging
 import os
+import time
 from typing import Awaitable, AsyncIterator, Callable
 
 import redis.asyncio as redis
@@ -60,6 +61,11 @@ PLAN_SUCCEEDED = "succeeded"
 PLAN_FAILED = "failed"
 PLAN_JOB_TTL_S = 3600  # jobs self-clean an hour after the last write (never persisted)
 
+# The planning chain's stages in execution order. Lives here rather than in the planning
+# service because the job frame reports ``stage_index``/``stage_count`` against it;
+# ``planning.graph.STAGE_SEQUENCE`` is this list, so there is only one to keep in sync.
+PLAN_STAGES = ["world", "script", "breakdown", "prompts", "assemble"]
+
 __all__ = [
     "PHASE_EXECUTING",
     "PHASE_COMPOSITING",
@@ -71,8 +77,10 @@ __all__ = [
     "PLAN_SUCCEEDED",
     "PLAN_FAILED",
     "PLAN_JOB_TTL_S",
+    "PLAN_STAGES",
     "create_plan_job",
     "set_plan_stage",
+    "set_plan_detail",
     "set_plan_succeeded",
     "set_plan_failed",
     "get_plan_job",
@@ -454,33 +462,93 @@ async def get_cost(project_id: str) -> float:
 # and streams progress over SSE, mirroring the scheduler's daemon+SSE shape. The job's
 # live state is one Redis hash ``planjob:{job_id}`` with a rolling TTL so nothing
 # lingers — unlike packages, jobs are ephemeral and never mirrored to Postgres.
+#
+# Progress is spread across one hash field per stage (``t:{stage}`` for its wall-clock,
+# ``d:{stage}`` for what it produced) rather than one merged JSON blob: the writes arrive
+# as fire-and-forget coroutines marshalled off the chain thread, and a read-modify-write
+# of a shared blob would race and lose them. Separate ``HSET`` fields never collide.
+_STAGE_TIME_PREFIX = "t:"
+_STAGE_DETAIL_PREFIX = "d:"
+
+
 def _plan_key(job_id: str) -> str:
     return f"planjob:{job_id}"
 
 
+def _now() -> float:
+    return time.time()
+
+
 async def create_plan_job(job_id: str, *, owner_id: str) -> None:
     """Register a new planning job as ``queued``, stamped with its owner (for the
-    ownership check on the SSE stream). Sets the self-cleaning TTL."""
+    ownership check on the SSE stream) and its start time. Sets the self-cleaning TTL."""
     r = _redis()
     key = _plan_key(job_id)
-    await r.hset(key, mapping={"status": PLAN_QUEUED, "owner": owner_id})
+    now = _now()
+    await r.hset(
+        key,
+        mapping={
+            "status": PLAN_QUEUED,
+            "owner": owner_id,
+            "created_at": now,
+            "stage_at": now,
+        },
+    )
     await r.expire(key, PLAN_JOB_TTL_S)
 
 
-async def set_plan_stage(job_id: str, stage: str) -> None:
+async def _close_stage_timer(r: redis.Redis, key: str, data: dict) -> tuple[str, float] | None:
+    """Record how long the currently-recorded stage ran and stamp a new ``stage_at``.
+    Returns ``(stage, total_s)``, or ``None`` when there is no stage to close out.
+
+    The window is *added* to any time already banked for that stage, because the terminal
+    node reports itself as its own successor: ``assemble`` is closed once by its own
+    ``on_stage`` and again by the terminal setter, and only the sum is its real duration."""
+    stage = data.get("stage")
+    stage_at = data.get("stage_at")
+    now = _now()
+    await r.hset(key, "stage_at", now)
+    if not stage or not stage_at:
+        return None
+    banked = float(data.get(f"{_STAGE_TIME_PREFIX}{stage}") or 0.0)
+    total = banked + max(0.0, now - float(stage_at))
+    await r.hset(key, f"{_STAGE_TIME_PREFIX}{stage}", total)
+    return stage, total
+
+
+async def set_plan_stage(job_id: str, stage: str) -> tuple[str, float] | None:
     """Advance a job to ``running`` and record the current chain stage (the node just
-    entered). Refreshes the TTL so an in-flight job never expires under its own feet."""
+    entered), closing out the outgoing stage's timer and returning
+    ``(outgoing_stage, elapsed_s)`` for the caller to log. Refreshes the TTL so an
+    in-flight job never expires under its own feet.
+
+    The read-then-write of ``stage``/``stage_at`` runs on the API event loop and stage
+    transitions are tens of seconds apart, so the window is not a practical race."""
     r = _redis()
     key = _plan_key(job_id)
+    data = await r.hgetall(key)
+    closed = await _close_stage_timer(r, key, data)
     await r.hset(key, mapping={"status": PLAN_RUNNING, "stage": stage})
+    await r.expire(key, PLAN_JOB_TTL_S)
+    return closed
+
+
+async def set_plan_detail(job_id: str, stage: str, detail: dict) -> None:
+    """Record what a stage produced (a small JSON summary the Planning screen renders
+    under that stage's row)."""
+    r = _redis()
+    key = _plan_key(job_id)
+    await r.hset(key, f"{_STAGE_DETAIL_PREFIX}{stage}", json.dumps(detail))
     await r.expire(key, PLAN_JOB_TTL_S)
 
 
 async def set_plan_succeeded(job_id: str, project_id: str) -> None:
     """Mark a job succeeded, carrying the persisted ``project_id`` the frontend routes
-    to (its checkpoint)."""
+    to (its checkpoint). Closes out the final stage's timer so its row lands as done."""
     r = _redis()
     key = _plan_key(job_id)
+    data = await r.hgetall(key)
+    await _close_stage_timer(r, key, data)
     await r.hset(key, mapping={"status": PLAN_SUCCEEDED, "project_id": project_id})
     await r.expire(key, PLAN_JOB_TTL_S)
 
@@ -490,6 +558,8 @@ async def set_plan_failed(job_id: str, errors: list[str]) -> None:
     string) the frontend renders in its banner."""
     r = _redis()
     key = _plan_key(job_id)
+    data = await r.hgetall(key)
+    await _close_stage_timer(r, key, data)
     await r.hset(key, mapping={"status": PLAN_FAILED, "errors": json.dumps(errors)})
     await r.expire(key, PLAN_JOB_TTL_S)
 
@@ -499,15 +569,37 @@ async def get_plan_job(job_id: str) -> dict | None:
 
     ``errors`` is parsed back from JSON; ``stage``/``project_id``/``errors`` are
     ``None`` until the relevant transition writes them, so the frame shape is stable
-    for the client regardless of which state the job is in."""
+    for the client regardless of which state the job is in.
+
+    Elapsed times are computed here rather than handed to the client as raw timestamps
+    to subtract against ``Date.now()`` — that would corrupt under clock skew between the
+    browser and the container."""
     data = await _redis().hgetall(_plan_key(job_id))
     if not data:
         return None
     errors = data.get("errors")
+    stage = data.get("stage")
+    created_at = data.get("created_at")
+    stage_at = data.get("stage_at")
+    now = _now()
     return {
         "job_id": job_id,
         "status": data.get("status"),
-        "stage": data.get("stage"),
+        "stage": stage,
+        "stage_index": PLAN_STAGES.index(stage) if stage in PLAN_STAGES else -1,
+        "stage_count": len(PLAN_STAGES),
+        "elapsed_s": round(now - float(created_at), 1) if created_at else 0.0,
+        "stage_elapsed_s": round(now - float(stage_at), 1) if stage_at else 0.0,
+        "stage_timings": {
+            k[len(_STAGE_TIME_PREFIX) :]: round(float(v), 1)
+            for k, v in data.items()
+            if k.startswith(_STAGE_TIME_PREFIX)
+        },
+        "details": {
+            k[len(_STAGE_DETAIL_PREFIX) :]: json.loads(v)
+            for k, v in data.items()
+            if k.startswith(_STAGE_DETAIL_PREFIX)
+        },
         "project_id": data.get("project_id"),
         "errors": json.loads(errors) if errors else None,
     }
