@@ -6,13 +6,16 @@ from schema.models import (
     Character,
     Location,
     Meta,
+    Narrative,
+    NarrativeScene,
+    NarrativeShot,
     NodeStatus,
     ProductionPackage,
     TimelineEntry,
     World,
 )
 
-SCHEMA_VERSION = "1.0"
+SCHEMA_VERSION = "1.1"
 
 __all__ = [
     "Asset",
@@ -20,6 +23,9 @@ __all__ = [
     "Character",
     "Location",
     "Meta",
+    "Narrative",
+    "NarrativeScene",
+    "NarrativeShot",
     "NodeStatus",
     "ProductionPackage",
     "TimelineEntry",

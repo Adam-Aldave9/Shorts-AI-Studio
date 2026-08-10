@@ -33,7 +33,9 @@
 
 @media (prefers-reduced-motion: reduce) {
   .animate-dag-flow,
-  .animate-node-pulse {
+  .animate-node-pulse,
+  .animate-progress-sweep,
+  .animate-spin {
     animation: none;
   }
 }

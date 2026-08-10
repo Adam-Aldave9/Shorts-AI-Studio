@@ -13,6 +13,13 @@ export function formatDuration(seconds: number): string {
   return rest ? `${minutes}m ${rest}s` : `${minutes}m`;
 }
 
+/** Seconds -> "0:06" / "1:30", the player-style timecode for a position in the cut. */
+export function formatTimecode(seconds: number): string {
+  if (!Number.isFinite(seconds)) return "-";
+  const total = Math.max(0, Math.round(seconds));
+  return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, "0")}`;
+}
+
 /** ISO timestamp -> the browser's locale string (falls back to the raw value). */
 export function formatDateTime(iso: string): string {
   const date = new Date(iso);

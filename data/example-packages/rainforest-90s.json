@@ -1,5 +1,5 @@
 {
-  "schema_version": "1.0",
+  "schema_version": "1.1",
   "project_id": "p_rainforest_90s",
   "created_at": "2026-06-07T00:00:00Z",
   "meta": {
@@ -1116,5 +1116,255 @@
       "out_s": 90.0,
       "audio_track": 1
     }
-  ]
+  ],
+  "narrative": {
+    "logline": "A 90-second flight through the Amazon rainforest, layer by layer, from the sunlit canopy to the night forest floor, and why keeping it matters.",
+    "scenes": [
+      {
+        "id": "scene_01",
+        "heading": "Dawn over the canopy",
+        "location": "Rainforest Canopy",
+        "beat": "Mist lifts off the treetops as dawn light spreads across an unbroken canopy.",
+        "narration": "The Amazon rainforest covers more than five million square kilometers, a single forest large enough to swallow whole nations."
+      },
+      {
+        "id": "scene_02",
+        "heading": "A green ocean from above",
+        "location": "Emergent Layer",
+        "beat": "The camera climbs past the emergent giants; a macaw bursts from the trees and the naturalist looks out over the treetops.",
+        "narration": "From above, it looks like a calm green ocean. But inside, it is the most crowded place on Earth."
+      },
+      {
+        "id": "scene_03",
+        "heading": "The river that feeds it",
+        "location": "Amazon River",
+        "beat": "The river winds through the forest - dolphins surface, macaws cross to a clay lick, the naturalist paddles at dawn.",
+        "narration": "A brown river threads through it for thousands of miles, feeding the trees and everything that depends on them."
+      },
+      {
+        "id": "scene_04",
+        "heading": "Down through the layers",
+        "location": "Forest Floor",
+        "beat": "The camera drops through shafts of light to the leaf litter, buttress roots, leafcutter ants and a red bromeliad.",
+        "narration": "Here, life is stacked in layers."
+      },
+      {
+        "id": "scene_05",
+        "heading": "Into the understory",
+        "location": "Understory",
+        "beat": "Deep in the shaded understory a tree frog blinks on a wet leaf while a jaguar moves through, pauses, and drinks.",
+        "narration": "Macaws and monkeys rule the sunlit canopy. Below, in the dim understory, jaguars move unseen and tiny frogs guard a single leaf."
+      },
+      {
+        "id": "scene_06",
+        "heading": "Small lives, close up",
+        "location": "Understory",
+        "beat": "Macaws preening in the canopy, a frog mid-leap, fungi spreading across a fallen log.",
+        "narration": "On the shadowed floor, armies of ants and quiet fungi turn death back into soil."
+      },
+      {
+        "id": "scene_07",
+        "heading": "Night shift",
+        "location": "Night Forest",
+        "beat": "Dusk falls and the forest changes shift - stars, fireflies, moonlit eyes and black water.",
+        "narration": "When night falls, the forest does not sleep; it simply changes shift."
+      },
+      {
+        "id": "scene_08",
+        "heading": "Why it matters",
+        "location": "Emergent Layer",
+        "beat": "Dawn returns over the emergent layer and the naturalist turns to speak directly to the viewer.",
+        "narration": "One in ten known species on the planet lives here, and the forest itself helps cool the world and steady its rains. It took millions of years to grow this rich."
+      },
+      {
+        "id": "scene_09",
+        "heading": "Up to us",
+        "location": "Rainforest Canopy",
+        "beat": "A last slow push into the glowing canopy at golden hour.",
+        "narration": "Keeping it is now up to us."
+      }
+    ],
+    "shots": [
+      {
+        "node_id": "shot_001",
+        "scene_id": "scene_01",
+        "shot_type": "establishing",
+        "action": "Slow upward pan off the misted treetops as dawn light arrives."
+      },
+      {
+        "node_id": "shot_002",
+        "scene_id": "scene_01",
+        "shot_type": "wide",
+        "action": "The camera keeps rising while golden light spills across the canopy."
+      },
+      {
+        "node_id": "shot_003",
+        "scene_id": "scene_02",
+        "shot_type": "aerial",
+        "action": "Wide aerial over the emergent giants, clouds drifting between their crowns."
+      },
+      {
+        "node_id": "shot_004",
+        "scene_id": "scene_02",
+        "shot_type": "wide",
+        "action": "A scarlet macaw bursts up from the canopy and glides across frame."
+      },
+      {
+        "node_id": "shot_005",
+        "scene_id": "scene_02",
+        "shot_type": "medium",
+        "action": "The naturalist gazes out over the treetops from the rope walkway."
+      },
+      {
+        "node_id": "shot_006",
+        "scene_id": "scene_03",
+        "shot_type": "aerial",
+        "action": "Sweeping aerial follows the river winding through unbroken forest."
+      },
+      {
+        "node_id": "shot_007",
+        "scene_id": "scene_03",
+        "shot_type": "wide",
+        "action": "The camera descends smoothly toward the mirror-still water."
+      },
+      {
+        "node_id": "shot_008",
+        "scene_id": "scene_03",
+        "shot_type": "medium",
+        "action": "The naturalist paddles a wooden canoe along the calm dawn river."
+      },
+      {
+        "node_id": "shot_009",
+        "scene_id": "scene_03",
+        "shot_type": "close-up",
+        "action": "A pink river dolphin arcs through the surface and slips under."
+      },
+      {
+        "node_id": "shot_010",
+        "scene_id": "scene_03",
+        "shot_type": "wide",
+        "action": "Two scarlet macaws fly low across the river toward a clay lick."
+      },
+      {
+        "node_id": "shot_011",
+        "scene_id": "scene_04",
+        "shot_type": "wide",
+        "action": "The camera drifts down through light shafts to the leaf-littered floor."
+      },
+      {
+        "node_id": "shot_012",
+        "scene_id": "scene_04",
+        "shot_type": "detail",
+        "action": "A tracking glide over a column of leafcutter ants carrying leaf fragments."
+      },
+      {
+        "node_id": "shot_013",
+        "scene_id": "scene_04",
+        "shot_type": "medium",
+        "action": "The naturalist crouches to examine a red bromeliad, brushing back a fern."
+      },
+      {
+        "node_id": "shot_014",
+        "scene_id": "scene_05",
+        "shot_type": "wide",
+        "action": "A slow push through dense understory foliage, broad leaves parting."
+      },
+      {
+        "node_id": "shot_015",
+        "scene_id": "scene_05",
+        "shot_type": "close-up",
+        "action": "Extreme close-up on a red-eyed tree frog blinking on a wet leaf."
+      },
+      {
+        "node_id": "shot_016",
+        "scene_id": "scene_05",
+        "shot_type": "medium",
+        "action": "A jaguar pads silently through the understory shadows."
+      },
+      {
+        "node_id": "shot_017",
+        "scene_id": "scene_05",
+        "shot_type": "close-up",
+        "action": "The jaguar pauses and turns its head toward camera."
+      },
+      {
+        "node_id": "shot_018",
+        "scene_id": "scene_05",
+        "shot_type": "medium",
+        "action": "The jaguar lowers its head to drink from a thin forest stream."
+      },
+      {
+        "node_id": "shot_019",
+        "scene_id": "scene_06",
+        "shot_type": "medium",
+        "action": "Two scarlet macaws preen one another on a mossy canopy branch."
+      },
+      {
+        "node_id": "shot_020",
+        "scene_id": "scene_06",
+        "shot_type": "close-up",
+        "action": "The tree frog leaps between two leaves in graceful slow motion."
+      },
+      {
+        "node_id": "shot_021",
+        "scene_id": "scene_06",
+        "shot_type": "detail",
+        "action": "Light shifts across a cluster of fungi on a fallen log."
+      },
+      {
+        "node_id": "shot_022",
+        "scene_id": "scene_07",
+        "shot_type": "wide",
+        "action": "Dusk settles and the canopy silhouettes darken against the sky."
+      },
+      {
+        "node_id": "shot_023",
+        "scene_id": "scene_07",
+        "shot_type": "wide",
+        "action": "Stars emerge above the treeline as fireflies blink in the understory."
+      },
+      {
+        "node_id": "shot_024",
+        "scene_id": "scene_07",
+        "shot_type": "close-up",
+        "action": "Moonlight catches the tree frog on a glistening leaf."
+      },
+      {
+        "node_id": "shot_025",
+        "scene_id": "scene_07",
+        "shot_type": "medium",
+        "action": "The jaguar's eyes reflect green as it moves through the night forest."
+      },
+      {
+        "node_id": "shot_026",
+        "scene_id": "scene_07",
+        "shot_type": "wide",
+        "action": "The moonlit river runs black under a starry sky, mist on the water."
+      },
+      {
+        "node_id": "shot_027",
+        "scene_id": "scene_08",
+        "shot_type": "aerial",
+        "action": "Dawn returns and fog rises off the vast canopy."
+      },
+      {
+        "node_id": "shot_028",
+        "scene_id": "scene_08",
+        "shot_type": "medium",
+        "action": "The naturalist turns to address the viewer directly."
+      },
+      {
+        "node_id": "shot_029",
+        "scene_id": "scene_08",
+        "shot_type": "aerial",
+        "action": "The camera pulls back high above the endless canopy."
+      },
+      {
+        "node_id": "shot_030",
+        "scene_id": "scene_09",
+        "shot_type": "establishing",
+        "action": "A final slow push into the glowing dawn canopy at golden hour."
+      }
+    ]
+  }
 }

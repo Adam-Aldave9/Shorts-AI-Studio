@@ -13,10 +13,19 @@ not asked of the model — the model can't know the ref node ids assembly will m
 
 from __future__ import annotations
 
+from typing import Callable
+
 from schema import World
 
 from planning.llm import MODEL_PROMPTS, Messages, call_structured
-from planning.models import ShotList, ShotPrompts
+from planning.models import ShotList, ShotPrompt, ShotPrompts
+
+# The shot list is written a batch at a time rather than in one call. The consistency
+# mechanism lives in the prompt text (verbatim canonical descriptions), not in seeing
+# every shot at once, so splitting costs nothing — and it keeps each response clear of
+# ``call_structured``'s 8192-token ceiling, which 30 prose prompts can plausibly breach.
+# Batches are contiguous so scene-adjacent shots stay together.
+PROMPT_BATCH_SIZE = 6
 
 SYSTEM = (
     "You are the prompts agent in an automated film pipeline. For each shot you "
@@ -66,7 +75,29 @@ def parse(result: ShotPrompts | dict) -> ShotPrompts:
     return result if isinstance(result, ShotPrompts) else ShotPrompts.model_validate(result)
 
 
-def run(brief: dict, shot_list: ShotList, world: World, *, call=call_structured) -> ShotPrompts:
-    messages = build_prompt(brief, shot_list, world)
-    raw = call(model=MODEL_PROMPTS, messages=messages, schema=ShotPrompts, temperature=0.4)
-    return parse(raw)
+def run(
+    brief: dict,
+    shot_list: ShotList,
+    world: World,
+    *,
+    call=call_structured,
+    batch_size: int = PROMPT_BATCH_SIZE,
+    on_progress: Callable[[int, int], None] | None = None,
+) -> ShotPrompts:
+    """Write one prompt per shot, ``batch_size`` shots per LLM call, reporting
+    ``on_progress(done, total)`` after each batch (this is the longest stage, so the
+    Planning screen shows a real fraction rather than an opaque spinner)."""
+    shots = shot_list.shots
+    collected: list[ShotPrompt] = []
+    for start in range(0, len(shots), batch_size):
+        batch = shots[start : start + batch_size]
+        raw = call(
+            model=MODEL_PROMPTS,
+            messages=build_prompt(brief, ShotList(shots=batch), world),
+            schema=ShotPrompts,
+            temperature=0.4,
+        )
+        collected.extend(parse(raw).prompts)
+        if on_progress is not None:
+            on_progress(min(start + batch_size, len(shots)), len(shots))
+    return ShotPrompts(prompts=collected)
