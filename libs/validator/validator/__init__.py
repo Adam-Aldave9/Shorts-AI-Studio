@@ -17,6 +17,10 @@ from schema import AssetType, ProductionPackage
 
 __all__ = ["ValidationReport", "validate_package"]
 
+# 1.1 adds the optional, display-only ``narrative`` block; packages written at 1.0 are
+# still valid and must keep re-running.
+_SUPPORTED_SCHEMA_VERSIONS = {"1.0", "1.1"}
+
 
 @dataclass
 class ValidationReport:
@@ -51,7 +55,7 @@ def validate_package(package: ProductionPackage, *, tolerance_s: float = 5.0) ->
     report = ValidationReport()
     ids = {a.node_id for a in package.assets}
 
-    if package.schema_version != "1.0":
+    if package.schema_version not in _SUPPORTED_SCHEMA_VERSIONS:
         report.errors.append(f"unsupported schema_version {package.schema_version!r}")
 
     # Every dependency edge must resolve.

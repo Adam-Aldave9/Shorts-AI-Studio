@@ -14,6 +14,9 @@ export type Brief = PlanningComponents["schemas"]["Brief"];
 export type ProductionPackage = SchedulerComponents["schemas"]["ProductionPackage"];
 export type PackageSummary = SchedulerComponents["schemas"]["PackageSummary"];
 export type Asset = SchedulerComponents["schemas"]["Asset"];
+export type TimelineEntry = SchedulerComponents["schemas"]["TimelineEntry"];
+export type NarrativeScene = SchedulerComponents["schemas"]["NarrativeScene"];
+export type NarrativeShot = SchedulerComponents["schemas"]["NarrativeShot"];
 
 /** A non-2xx response. For the scheduler's 422, `detail` is the validator's error list,
  *  rendered inline at the checkpoint. */

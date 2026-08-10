@@ -7,7 +7,15 @@ video-without-ref, budget-exceeded, and duration-tolerance.
 
 from __future__ import annotations
 
-from schema import Asset, AssetType, Meta, ProductionPackage
+from schema import (
+    Asset,
+    AssetType,
+    Meta,
+    Narrative,
+    NarrativeScene,
+    NarrativeShot,
+    ProductionPackage,
+)
 
 from validator import validate_package
 
@@ -118,3 +126,33 @@ def test_unsupported_schema_version_is_rejected():
     report = validate_package(pkg)
     assert not report.ok
     assert any("unsupported schema_version" in e for e in report.errors)
+
+
+def test_schema_1_0_package_still_passes():
+    """Packages written before the narrative block must keep re-running."""
+    pkg = _valid_pkg()
+    pkg.schema_version = "1.0"
+    pkg.narrative = None
+    report = validate_package(pkg)
+    assert report.ok
+
+
+def test_package_without_narrative_key_parses():
+    dumped = _valid_pkg().model_dump(mode="json")
+    dumped.pop("narrative")
+    dumped["schema_version"] = "1.0"
+    pkg = ProductionPackage.model_validate(dumped)
+    assert pkg.narrative is None
+    assert validate_package(pkg).ok
+
+
+def test_narrative_is_not_gated():
+    """The block is display-only: a stale or empty one must never block a run."""
+    pkg = _valid_pkg()
+    pkg.narrative = Narrative(
+        logline="A tree, and then some.",
+        scenes=[NarrativeScene(id="scene_01", heading="A tree", narration="It sways.")],
+        shots=[NarrativeShot(node_id="ghost_shot", scene_id="scene_99")],
+    )
+    report = validate_package(pkg)
+    assert report.ok

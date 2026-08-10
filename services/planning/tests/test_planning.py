@@ -291,6 +291,30 @@ def test_assemble_produces_validatable_package():
     assert "The river wakes." in pkg.asset_by_id("narration_full").text
 
 
+def test_assemble_carries_the_narrative_forward():
+    """The creative draft assembly flattens is kept for display, keyed to the
+    renumbered node ids."""
+    pkg = assemble_package(_brief(), _world(), _screenplay(), _shot_list(), _shot_prompts())
+    narrative = pkg.narrative
+    assert narrative is not None
+    assert narrative.logline == "A river at dawn."
+
+    assert [s.id for s in narrative.scenes] == ["scene_01", "scene_02"]
+    assert narrative.scenes[0].heading == "River dawn"
+    assert narrative.scenes[0].beat == "Mist on the water"
+    assert narrative.scenes[0].narration == "The river wakes."
+
+    videos = [a.node_id for a in pkg.assets if a.type is AssetType.VIDEO]
+    assert [s.node_id for s in narrative.shots] == videos
+    assert [s.scene_id for s in narrative.shots] == ["scene_01", "scene_01", "scene_02"]
+    assert [s.shot_type for s in narrative.shots] == ["aerial", "wide", "wide"]
+    assert narrative.shots[1].action == "Jaguar drinks at the bank"
+
+    # The flattened voiceover blob is still the join of the per-scene narration.
+    joined = " ".join(s.narration for s in narrative.scenes)
+    assert pkg.asset_by_id("narration_full").text == joined
+
+
 def test_assemble_handles_unknown_entity_tags():
     """Even if the breakdown tags a junk location, the video gate still passes."""
     shots = ShotList(shots=[{"id": "shot_001", "scene_id": "scene_01",
@@ -310,6 +334,23 @@ def test_load_mock_package_is_valid_with_fresh_id():
     assert validate_package(pkg).ok
     assert pkg.project_id.startswith("p_")
     assert len([a for a in pkg.assets if a.type is AssetType.VIDEO]) == 30
+
+
+def test_mock_package_carries_a_narrative():
+    """The mock path is the primary dev loop, so the fixture must exercise the
+    narrative block too."""
+    pkg = _load_mock_package(_brief())
+    narrative = pkg.narrative
+    assert narrative is not None and narrative.logline
+    assert len(narrative.scenes) > 1
+
+    videos = [a.node_id for a in pkg.assets if a.type is AssetType.VIDEO]
+    assert [s.node_id for s in narrative.shots] == videos
+    scene_ids = {s.id for s in narrative.scenes}
+    assert all(s.scene_id in scene_ids for s in narrative.shots)
+
+    joined = " ".join(s.narration for s in narrative.scenes)
+    assert pkg.asset_by_id("narration_full").text == joined
 
 
 def test_run_planning_mock_returns_validatable_package(monkeypatch):

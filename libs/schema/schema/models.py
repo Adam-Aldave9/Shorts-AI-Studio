@@ -84,10 +84,42 @@ class TimelineEntry(BaseModel):
     audio_track: int | None = None
 
 
+class NarrativeScene(BaseModel):
+    """One beat of the film as planned: what the viewer sees and what is spoken over it."""
+
+    id: str
+    heading: str
+    location: str = ""
+    beat: str = ""
+    narration: str = ""
+
+
+class NarrativeShot(BaseModel):
+    """The creative intent behind one video node, kept after assembly renumbers shot ids."""
+
+    node_id: str
+    scene_id: str
+    shot_type: str = ""
+    action: str = ""
+
+
+class Narrative(BaseModel):
+    """The creative draft the package was assembled from.
+
+    Display-only: the execution tier never reads it. Keeping it here rather than on
+    ``Asset`` leaves the DAG nodes free of planning metadata, and keeps the package a
+    single self-contained artifact.
+    """
+
+    logline: str = ""
+    scenes: list[NarrativeScene] = Field(default_factory=list)
+    shots: list[NarrativeShot] = Field(default_factory=list)
+
+
 class ProductionPackage(BaseModel):
     """The replayable artifact that is the seam between the two tiers (spec §5)."""
 
-    schema_version: str = "1.0"
+    schema_version: str = "1.1"
     project_id: str
     created_at: datetime = Field(
         default_factory=lambda: datetime.now(timezone.utc)
@@ -96,6 +128,8 @@ class ProductionPackage(BaseModel):
     world: World = Field(default_factory=World)
     assets: list[Asset] = Field(default_factory=list)
     timeline: list[TimelineEntry] = Field(default_factory=list)
+    # None on every package written before schema 1.1.
+    narrative: Narrative | None = None
 
     def asset_by_id(self, node_id: str) -> Asset | None:
         return next((a for a in self.assets if a.node_id == node_id), None)

@@ -16,6 +16,11 @@ assembly *guarantees* every gate by construction —
 
 The result is then re-validated terminally in the graph and again server-side on
 any checkpoint edit — but it should already be clean leaving here.
+
+Assembly also copies the creative draft it flattens — the logline, the per-scene
+narration, each shot's type and action — into the package's ``narrative`` block. The
+execution tier never reads it; it exists so the result screen can show what was planned
+next to what was rendered.
 """
 
 from __future__ import annotations
@@ -28,6 +33,9 @@ from schema import (
     Character,
     Location,
     Meta,
+    Narrative,
+    NarrativeScene,
+    NarrativeShot,
     ProductionPackage,
     TimelineEntry,
     World,
@@ -134,6 +142,7 @@ def assemble_package(
     durations = _normalize_durations([s.duration_s for s in shots], target)
 
     video_nodes: list[Asset] = []
+    narrative_shots: list[NarrativeShot] = []
     prev_id: str | None = None
     prev_loc: str | None = None
     for i, (shot, dur) in enumerate(zip(shots, durations)):
@@ -160,6 +169,16 @@ def assemble_package(
                 prompt=prompt_text,
                 reference_image_ids=refs,
                 estimated_cost_usd=est,
+            )
+        )
+        # Renumbering to shot_NNN loses the link back to the screenplay, so record it
+        # here, the only place both ids are in scope.
+        narrative_shots.append(
+            NarrativeShot(
+                node_id=node_id,
+                scene_id=shot.scene_id,
+                shot_type=shot.shot_type,
+                action=shot.action,
             )
         )
         prev_id, prev_loc = node_id, shot.location_id
@@ -197,10 +216,26 @@ def assemble_package(
         budget_usd=budget,
     )
 
+    narrative = Narrative(
+        logline=screenplay.logline,
+        scenes=[
+            NarrativeScene(
+                id=scene.id,
+                heading=scene.heading,
+                location=scene.location,
+                beat=scene.beat,
+                narration=scene.narration,
+            )
+            for scene in screenplay.scenes
+        ],
+        shots=narrative_shots,
+    )
+
     return ProductionPackage(
         project_id=project_id,
         meta=meta,
         world=world,
         assets=assets,
         timeline=timeline,
+        narrative=narrative,
     )

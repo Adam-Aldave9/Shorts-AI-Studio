@@ -236,12 +236,17 @@ async def _run_mock(
     package = _load_mock_package(brief)
     delay = _mock_delay_s()
     shots = _video_shot_count(package)
+    narrative = package.narrative
     details = {
         "world": {
             "characters": [c.name for c in package.world.characters],
             "locations": [l.name for l in package.world.locations],
         },
-        "script": {"title": package.meta.title, "logline": package.meta.premise},
+        "script": {
+            "title": package.meta.title,
+            "logline": (narrative.logline if narrative else "") or package.meta.premise,
+            "scenes": len(narrative.scenes) if narrative else 0,
+        },
         "breakdown": {"shots": shots},
         "assemble": _assemble_detail(package),
     }
