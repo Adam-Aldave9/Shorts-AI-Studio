@@ -4,7 +4,9 @@ import type { ProductionPackage } from "@/api/client";
 import type { PackageDraftApi } from "@/hooks/usePackageDraft";
 import { estimatedTotalUsd, voiceovers } from "@/lib/package";
 import { formatUsd } from "@/lib/format";
+import type { NodeReuse } from "@/lib/reuse";
 import { Card, Field, WarningBanner, controlClass } from "@/components/ui";
+import { RerenderToggle } from "./ShotDetail";
 
 export function StoryPanel({
   pkg,
@@ -12,9 +14,13 @@ export function StoryPanel({
   setMeta,
   setNode,
   readOnly,
+  reuse,
+  onToggleRerender,
 }: Pick<PackageDraftApi, "draft" | "setMeta" | "setNode"> & {
   pkg: ProductionPackage;
   readOnly: boolean;
+  reuse: Map<string, NodeReuse>;
+  onToggleRerender: (nodeId: string) => void;
 }) {
   const narrations = voiceovers(pkg);
   const estimate = estimatedTotalUsd(pkg);
@@ -88,17 +94,29 @@ export function StoryPanel({
       {narrations.length > 0 && (
         <Card className="space-y-4">
           <div className="text-xs uppercase tracking-wide text-fg-subtle">Narration</div>
-          {narrations.map((voiceover) => (
-            <Field key={voiceover.node_id} label={voiceover.node_id}>
-              <textarea
-                className={controlClass}
-                rows={6}
-                value={draft.nodes[voiceover.node_id] ?? ""}
-                disabled={readOnly}
-                onChange={(event) => setNode(voiceover.node_id, event.target.value)}
-              />
-            </Field>
-          ))}
+          {narrations.map((voiceover) => {
+            const nodeReuse = reuse.get(voiceover.node_id);
+            return (
+              <div key={voiceover.node_id} className="space-y-2">
+                <Field label={voiceover.node_id}>
+                  <textarea
+                    className={controlClass}
+                    rows={6}
+                    value={draft.nodes[voiceover.node_id] ?? ""}
+                    disabled={readOnly}
+                    onChange={(event) => setNode(voiceover.node_id, event.target.value)}
+                  />
+                </Field>
+                {nodeReuse && (
+                  <RerenderToggle
+                    reuse={nodeReuse}
+                    readOnly={readOnly}
+                    onToggle={() => onToggleRerender(voiceover.node_id)}
+                  />
+                )}
+              </div>
+            );
+          })}
         </Card>
       )}
     </div>

@@ -13,10 +13,14 @@ Key layout
 ``node:{project_id}:{node_id}``      hash of *live, mutable* run state — ``status``,
                                      ``asset_url``, ``provider_url``,
                                      ``actual_cost_usd``, ``attempts``, ``error``,
-                                     ``error_code``, ``error_detail``.
+                                     ``error_code``, ``error_detail``, and
+                                     ``reused_from`` (``{project_id}/{node_id}``) on a
+                                     node seeded from another version's render.
 ``cost:{project_id}``                float owned by ``CostTracker`` (rate-limiter lib).
 ``project:{project_id}:phase``       ``executing|compositing|complete|blocked|paused``.
 ``project:{project_id}:final_url``   final MP4 URL.
+``planjob:{job_id}``                 transient planning-job hash: ``status``, ``stage``,
+                                     ``kind``, ``mode``, ``skipped``, timings, details.
 
 ``provider_url`` is kept distinct from the MinIO ``asset_url``: it is the upstream
 provider (fal http) URL, and is load-bearing for i2v ``image_url`` threading in real
@@ -34,8 +38,9 @@ import asyncio
 import json
 import logging
 import os
+import secrets
 import time
-from typing import Awaitable, AsyncIterator, Callable
+from typing import Awaitable, AsyncIterator, Callable, Collection
 
 import redis.asyncio as redis
 from redis.exceptions import WatchError
@@ -90,7 +95,10 @@ __all__ = [
     "use_client",
     "save_package",
     "get_package",
+    "get_package_raw",
     "approve_package",
+    "approve_and_seed",
+    "replace_package_if_unapproved",
     "is_package_approved",
     "iter_approved_packages",
     "iter_all_packages",
@@ -230,6 +238,85 @@ async def get_package(project_id: str) -> ProductionPackage | None:
         if node.get("actual_cost_usd"):
             asset.actual_cost_usd = float(node["actual_cost_usd"])
     return package
+
+
+async def get_package_raw(project_id: str) -> str | None:
+    """The stored spec JSON exactly as written (Redis only, never hydrated)."""
+    return await _redis().get(f"pkg:{project_id}")
+
+
+async def approve_and_seed(
+    project_id: str,
+    *,
+    expected_raw: str,
+    rerender: Collection[str] = (),
+    seed: Callable[[ProductionPackage], Awaitable[dict[str, dict[str, str]]]] | None = None,
+) -> dict[str, dict[str, str]]:
+    """Approve in one transaction with everything the daemon must see at once: fresh takes for
+    ``rerender`` nodes (written into the spec) and the live hashes of reused nodes. Raises
+    KeyError when the package is gone and EditConflict when it changed since ``expected_raw``
+    or is already approved."""
+    pkg_key = f"pkg:{project_id}"
+    r = _redis()
+    async with r.pipeline(transaction=True) as pipe:
+        while True:
+            try:
+                await pipe.watch(pkg_key, "projects:approved")
+                raw = await pipe.get(pkg_key)
+                if not raw:
+                    raise KeyError(project_id)
+                if raw != expected_raw:
+                    raise EditConflict(f"{project_id} changed")
+                if await pipe.sismember("projects:approved", project_id):
+                    raise EditConflict(f"{project_id} is already approved")
+                package = ProductionPackage.model_validate_json(raw)
+                retaken = False
+                for node_id in rerender:
+                    asset = package.asset_by_id(node_id)
+                    if asset is not None:
+                        asset.take = secrets.token_hex(4)
+                        retaken = True
+                # The takes are already in the spec, so retaken nodes can never match a source.
+                seeds = await seed(package) if seed else {}
+                pipe.multi()
+                if retaken:
+                    pipe.set(pkg_key, package.model_dump_json())
+                for node_id, fields in seeds.items():
+                    pipe.hset(f"node:{project_id}:{node_id}", mapping=fields)
+                pipe.sadd("projects:approved", project_id)
+                await pipe.execute()
+                break
+            except WatchError:
+                continue
+    await _mirror(lambda: pg.write_package(package, True, None), "approve_and_seed")
+    for node_id, fields in seeds.items():
+        await _mirror(
+            lambda: pg.write_node_status(project_id, node_id, fields["status"], fields),
+            "approve_and_seed",
+        )
+    return seeds
+
+
+async def replace_package_if_unapproved(package: ProductionPackage) -> bool:
+    """Overwrite a draft's spec in place, keeping its owner. False, with nothing written,
+    once the package is approved: an approved spec is immutable."""
+    pkg_key = f"pkg:{package.project_id}"
+    async with _redis().pipeline(transaction=True) as pipe:
+        while True:
+            try:
+                await pipe.watch(pkg_key, "projects:approved")
+                if await pipe.sismember("projects:approved", package.project_id):
+                    await pipe.unwatch()
+                    return False
+                pipe.multi()
+                pipe.set(pkg_key, package.model_dump_json())
+                pipe.sadd("projects:all", package.project_id)
+                await pipe.execute()
+                break
+            except WatchError:
+                continue
+    await _mirror(lambda: pg.write_package(package, None, None), "replace_package_if_unapproved")
+    return True
 
 
 async def approve_package(project_id: str) -> bool:
@@ -549,21 +636,33 @@ def _now() -> float:
     return time.time()
 
 
-async def create_plan_job(job_id: str, *, owner_id: str) -> None:
+async def create_plan_job(
+    job_id: str,
+    *,
+    owner_id: str,
+    kind: str = "brief",
+    mode: str | None = None,
+    skipped: Collection[str] = (),
+) -> None:
     """Register a new planning job as ``queued``, stamped with its owner (for the
-    ownership check on the SSE stream) and its start time. Sets the self-cleaning TTL."""
+    ownership check on the SSE stream) and its start time. Sets the self-cleaning TTL.
+
+    ``kind`` is ``brief`` or ``revision``. A revision also records its ``mode`` and the
+    stages it skips because the user's own edits already produced them."""
     r = _redis()
     key = _plan_key(job_id)
     now = _now()
-    await r.hset(
-        key,
-        mapping={
-            "status": PLAN_QUEUED,
-            "owner": owner_id,
-            "created_at": now,
-            "stage_at": now,
-        },
-    )
+    mapping: dict[str, str | float] = {
+        "status": PLAN_QUEUED,
+        "owner": owner_id,
+        "created_at": now,
+        "stage_at": now,
+        "kind": kind,
+        "skipped": json.dumps(list(skipped)),
+    }
+    if mode:
+        mapping["mode"] = mode
+    await r.hset(key, mapping=mapping)
     await r.expire(key, PLAN_JOB_TTL_S)
 
 
@@ -652,8 +751,12 @@ async def get_plan_job(job_id: str) -> dict | None:
     created_at = data.get("created_at")
     stage_at = data.get("stage_at")
     now = _now()
+    skipped = data.get("skipped")
     return {
         "job_id": job_id,
+        "kind": data.get("kind") or "brief",
+        "mode": data.get("mode"),
+        "skipped": json.loads(skipped) if skipped else [],
         "status": data.get("status"),
         "stage": stage,
         "stage_index": PLAN_STAGES.index(stage) if stage in PLAN_STAGES else -1,

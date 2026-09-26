@@ -18,8 +18,9 @@ from schema import Asset, AssetType, ProductionPackage, prompt_max_bytes, utf8_l
 __all__ = ["ValidationReport", "content_errors", "validate_package"]
 
 # 1.1 adds the optional, display-only ``narrative`` block; packages written at 1.0 are
-# still valid and must keep re-running.
-_SUPPORTED_SCHEMA_VERSIONS = {"1.0", "1.1"}
+# still valid and must keep re-running. 1.2 adds lineage, take and each shot's breakdown
+# tags; all optional.
+_SUPPORTED_SCHEMA_VERSIONS = {"1.0", "1.1", "1.2"}
 
 
 @dataclass

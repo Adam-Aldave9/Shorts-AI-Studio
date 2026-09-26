@@ -1,13 +1,15 @@
 // Status screen: live DAG view driven by the scheduler's SSE stream.
 
 import { useEffect } from "react";
-import { Link, useParams } from "react-router-dom";
-import type { SseNode, StatusEvent } from "@/api/client";
+import { Link, useNavigate, useParams } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
+import { getPackage, type SseNode, type StatusEvent } from "@/api/client";
 import { useStatusStream } from "@/hooks/useStatusStream";
 import { useNavigateOnce } from "@/hooks/useNavigateOnce";
 import { formatDuration, formatUsd } from "@/lib/format";
 import { describeFailure } from "@/lib/nodeErrors";
 import {
+  Button,
   PhaseBadge,
   ProgressBar,
   Spinner,
@@ -17,6 +19,11 @@ import {
   WarningBanner,
 } from "@/components/ui";
 import { FailurePanel } from "@/components/status/FailurePanel";
+import { VersionBadge } from "@/components/versions/VersionBadge";
+
+// A run in these phases can't change in place any further than recovery allows, so the
+// story itself can be revised into a new version instead.
+const REVISABLE_PHASES = new Set(["blocked", "paused", "complete"]);
 
 function countByStatus(event: StatusEvent, status: string): number {
   return Object.values(event.nodes).filter((node) => node.status === status).length;
@@ -47,6 +54,15 @@ export default function Status() {
   const { projectId = "" } = useParams();
   const event = useStatusStream(projectId);
   const navigateOnce = useNavigateOnce();
+  const navigate = useNavigate();
+  // Shared with FailurePanel, which reads the same package.
+  const runPackage = useQuery({
+    queryKey: ["runPackage", projectId],
+    queryFn: () => getPackage(projectId),
+    enabled: Boolean(projectId),
+    staleTime: 0,
+  });
+  const version = runPackage.data?.lineage?.version ?? 1;
 
   // Delayed so the completed state is visible before handing off to Result.
   useEffect(() => {
@@ -60,24 +76,34 @@ export default function Status() {
   const nodes = Object.entries(event.nodes);
   const done = countByStatus(event, "succeeded");
   const failed = countByStatus(event, "failed") + countByStatus(event, "dead-lettered");
+  const reused = nodes.filter(([, node]) => node.reused_from).length;
 
   return (
     <div className="mx-auto max-w-5xl">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">
           <h1 className="text-2xl font-semibold">Execution</h1>
+          <VersionBadge version={version} />
           <PhaseBadge phase={event.phase} />
         </div>
-        <p className="font-mono text-xs text-fg-subtle">{event.project_id}</p>
+        <div className="flex items-center gap-3">
+          {event.phase && REVISABLE_PHASES.has(event.phase) && (
+            <Button variant="secondary" onClick={() => navigate(`/revise/${projectId}`)}>
+              Revise the story instead
+            </Button>
+          )}
+          <p className="font-mono text-xs text-fg-subtle">{event.project_id}</p>
+        </div>
       </div>
 
-      <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+      <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-7">
         <Stat label="Cost to date" value={formatUsd(event.cost_usd)} />
         <Stat label="Critical path" value={formatDuration(event.critical_path_s)} hint="floor" />
         <Stat label="In flight" value={countByStatus(event, "dispatched")} />
         <Stat label="Queued" value={countByStatus(event, "pending")} />
         <Stat label="Done" value={countByStatus(event, "succeeded")} />
         <Stat label="Failed" value={failed} />
+        <Stat label="Reused" value={reused} hint="from earlier versions" />
       </div>
 
       <ProgressBar
@@ -116,7 +142,17 @@ export default function Status() {
           <div key={nodeId} className="rounded-md border bg-surface-raised px-3 py-2">
             <div className="flex items-center justify-between gap-2">
               <span className="truncate font-mono text-xs text-fg-muted">{nodeId}</span>
-              <StatusBadge status={node.status} />
+              <span className="flex shrink-0 items-center gap-1">
+                {node.reused_from && (
+                  <span
+                    className="rounded-full border border-accent/30 bg-accent/10 px-2 py-0.5 text-xs text-accent-soft"
+                    title={`Reused from ${node.reused_from}`}
+                  >
+                    reused
+                  </span>
+                )}
+                <StatusBadge status={node.status} />
+              </span>
             </div>
             {node.attempts > 1 && (
               <div className="mt-1 text-xs text-fg-subtle">attempts: {node.attempts}</div>

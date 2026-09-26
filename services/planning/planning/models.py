@@ -17,6 +17,15 @@ returns schema-shaped JSON, not free text to regex (spec §4.4).
 from __future__ import annotations
 
 from pydantic import BaseModel, Field
+from schema import World
+
+
+class Brief(BaseModel):
+    premise: str
+    target_duration_s: float = 90
+    style: str | None = None
+    narration_voice_id: str | None = None
+
 
 # --------------------------------------------------------------------------
 # Script agent — the screenplay
@@ -104,3 +113,28 @@ class PromptRevision(BaseModel):
 
     prompt: str = Field(description="The full rewritten prompt.")
     notes: str = Field(description="One sentence on what changed and why.")
+
+
+# --------------------------------------------------------------------------
+# Revisions — the editable stages of a version, and AI rewrites of them
+# --------------------------------------------------------------------------
+
+
+class Story(BaseModel):
+    """Every editable planning stage of one version, above the render DAG."""
+
+    brief: Brief
+    world: World
+    script: Screenplay
+    # Playback order. An existing shot's id is its node id in the version ("shot_007").
+    shots: list[Shot] = Field(default_factory=list)
+
+
+class WorldRevision(BaseModel):
+    world: World
+    notes: str = Field(description="One sentence on what changed.")
+
+
+class ScreenplayRevision(BaseModel):
+    screenplay: Screenplay
+    notes: str = Field(description="One sentence on what changed.")

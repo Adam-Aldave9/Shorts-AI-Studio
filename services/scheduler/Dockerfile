@@ -9,9 +9,10 @@ COPY libs/validator /app/libs/validator
 COPY libs/rate-limiter /app/libs/rate-limiter
 COPY libs/state /app/libs/state
 COPY libs/auth /app/libs/auth
+COPY libs/storage /app/libs/storage
 COPY services/scheduler /app/scheduler
 
-RUN pip install ./libs/schema ./libs/validator ./libs/rate-limiter ./libs/state ./libs/auth ./scheduler
+RUN pip install ./libs/schema ./libs/validator ./libs/rate-limiter ./libs/state ./libs/auth ./libs/storage ./scheduler
 
 EXPOSE 8001
 CMD ["uvicorn", "scheduler.main:app", "--host", "0.0.0.0", "--port", "8001"]

@@ -9,3 +9,5 @@ os.environ.setdefault("SECRET_KEY", "test-secret-key-not-for-production")
 os.environ.setdefault("AUTH_ALLOWED_ORIGINS", "http://localhost:5173")
 os.environ.pop("POSTGRES_URL", None)
 os.environ["MOCK"] = "true"
+# The revision end-to-end test runs a planning job; don't dwell on each mock stage.
+os.environ["MOCK_PLAN_DELAY_S"] = "0"

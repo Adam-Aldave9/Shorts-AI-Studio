@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import pytest
+from schema import whole_seconds
 
 from adapters.base import ProviderError
 from adapters.fal import _MODEL_SLUGS, _PRICES, FalAdapter
@@ -40,3 +41,11 @@ def test_unknown_model_is_permanent_error():
 
 def test_priced_models_all_have_slugs():
     assert set(_PRICES) <= set(_MODEL_SLUGS)
+
+
+@pytest.mark.parametrize("duration", [2.5, 2.9, 3.5])
+def test_pixverse_duration_matches_fingerprint_rounding(duration):
+    body = FalAdapter._build_input(
+        "pixverse-v6-i2v", {"prompt": "pan", "image_url": "https://x/y.png", "duration": duration}
+    )
+    assert body["duration"] == whole_seconds(duration)

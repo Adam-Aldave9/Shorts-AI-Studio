@@ -15,7 +15,7 @@ import os
 from typing import Any
 
 import httpx
-from schema import ErrorCode
+from schema import ErrorCode, whole_seconds
 
 from adapters.base import JobHandle, JobResult, ProviderError
 from adapters.errors import http_error
@@ -124,7 +124,7 @@ class FalAdapter:
             body = {"prompt": payload.get("prompt") or "", "image_url": image_url}
             if payload.get("duration"):
                 # PixVerse V6 takes an integer duration in seconds (1-15).
-                body["duration"] = int(round(float(payload["duration"])))
+                body["duration"] = whole_seconds(payload["duration"])
             return body
         raise ProviderError(
             f"unknown fal model {model!r}", code=ErrorCode.INVALID_INPUT, transient=False

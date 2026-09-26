@@ -71,3 +71,46 @@ def run(brief: dict, screenplay: Screenplay, world: World, *, call=call_structur
     messages = build_prompt(brief, screenplay, world)
     raw = call(model=MODEL_BREAKDOWN, messages=messages, schema=ShotList, temperature=0.3)
     return parse(raw)
+
+
+SCENE_SYSTEM = (
+    "You are the breakdown agent in an automated film pipeline. You break the listed scenes of "
+    "a screenplay into short shots for image-to-video generation; the other scenes are shown "
+    "only for context. Each shot is 3 to 5 seconds and shows one clear action. Produce shots "
+    "only for the listed scenes, in order, and hit each scene's requested shot count closely. "
+    "Tag each shot with its scene_id, exactly one location_id and the subject_ids of any "
+    "characters in frame, using ONLY the world ids you are given. Return only the structured "
+    "shot list."
+)
+
+
+def build_scene_prompt(
+    brief: dict, screenplay: Screenplay, world: World, targets: dict[str, int]
+) -> Messages:
+    """Pure: the scenes to re-plan (with shot counts) + the whole script for context."""
+    wanted = "\n".join(
+        f"  [{s.id}] {s.heading} @ {s.location}: {s.beat} - about {targets[s.id]} shots"
+        for s in screenplay.scenes
+        if s.id in targets
+    )
+    human = (
+        f"Scenes to break into shots:\n{wanted}\n\n"
+        f"Whole screenplay for context: {screenplay.title}\nScenes:\n{_scene_lines(screenplay)}\n\n"
+        f"World ids (use these exact ids for location_id / subject_ids):\n{_world_lines(world)}\n\n"
+        "For each shot give an id, the scene_id it comes from, a shot_type, a duration in "
+        "seconds, its location_id, the subject_ids in frame, and the action to animate."
+    )
+    return [("system", SCENE_SYSTEM), ("human", human)]
+
+
+def run_scenes(
+    brief: dict,
+    screenplay: Screenplay,
+    world: World,
+    targets: dict[str, int],
+    *,
+    call=call_structured,
+) -> ShotList:
+    messages = build_scene_prompt(brief, screenplay, world, targets)
+    raw = call(model=MODEL_BREAKDOWN, messages=messages, schema=ShotList, temperature=0.3)
+    return parse(raw)

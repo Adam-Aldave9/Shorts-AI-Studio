@@ -38,12 +38,19 @@ class Storage:
     ) -> None:
         self.endpoint = endpoint or os.environ.get("S3_ENDPOINT", "http://localhost:9000")
         self.bucket = bucket or os.environ.get("S3_BUCKET", "film-assets")
-        self._s3 = boto3.client(
+        self._access_key = access_key or os.environ.get("AWS_ACCESS_KEY_ID", "minioadmin")
+        self._secret_key = secret_key or os.environ.get("AWS_SECRET_ACCESS_KEY", "minioadmin")
+        self._region = region
+        self._s3 = self._client(self.endpoint)
+        self._public_s3 = None
+
+    def _client(self, endpoint: str):  # type: ignore[no-untyped-def]
+        return boto3.client(
             "s3",
-            endpoint_url=self.endpoint,
-            aws_access_key_id=access_key or os.environ.get("AWS_ACCESS_KEY_ID", "minioadmin"),
-            aws_secret_access_key=secret_key or os.environ.get("AWS_SECRET_ACCESS_KEY", "minioadmin"),
-            region_name=region,
+            endpoint_url=endpoint,
+            aws_access_key_id=self._access_key,
+            aws_secret_access_key=self._secret_key,
+            region_name=self._region,
             # Path-style ("endpoint/bucket/key") is what MinIO speaks.
             config=Config(signature_version="s3v4", s3={"addressing_style": "path"}),
         )
@@ -100,3 +107,19 @@ class Storage:
             return True
         except ClientError:
             return False
+
+    def presigned_get_url(
+        self, key_or_s3url: str, *, expires_s: int = 3600, download_name: str | None = None
+    ) -> str:
+        """A time-limited GET URL a browser can open directly. The signature covers the
+        host, so it is signed for ``S3_PUBLIC_ENDPOINT`` (what the browser reaches), not
+        the in-network endpoint. Makes no network call."""
+        if self._public_s3 is None:
+            self._public_s3 = self._client(os.environ.get("S3_PUBLIC_ENDPOINT") or self.endpoint)
+        params = {"Bucket": self.bucket, "Key": self._key(key_or_s3url)}
+        if download_name:
+            # A cross-origin <a download> ignores its filename, so the response header sets it.
+            params["ResponseContentDisposition"] = f'attachment; filename="{download_name}"'
+        return self._public_s3.generate_presigned_url(
+            "get_object", Params=params, ExpiresIn=expires_s
+        )

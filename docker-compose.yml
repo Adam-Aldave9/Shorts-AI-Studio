@@ -81,6 +81,14 @@ services:
     environment:
       REDIS_URL: redis://redis:6379/0
       POSTGRES_URL: postgresql://afp:afp@postgres:5432/afp
+      # Reuse never copies mock renders into a real film, so the scheduler must know the mode.
+      MOCK: ${MOCK:-false}
+      # Final-cut playback: presigned URLs are signed for the host the browser reaches.
+      S3_ENDPOINT: http://minio:9000
+      S3_BUCKET: ${S3_BUCKET:-film-assets}
+      AWS_ACCESS_KEY_ID: minioadmin
+      AWS_SECRET_ACCESS_KEY: minioadmin
+      S3_PUBLIC_ENDPOINT: ${S3_PUBLIC_ENDPOINT:-http://localhost:9000}
       # Auth (shared libs/auth). SECRET_KEY is required — compose fails fast if unset.
       SECRET_KEY: ${SECRET_KEY:?set SECRET_KEY (python -c "import secrets;print(secrets.token_urlsafe(64))")}
       COOKIE_SECURE: ${COOKIE_SECURE:-false}

@@ -5,6 +5,7 @@ import type { ProductionPackage } from "@/api/client";
 import { estimatedTotalUsd, videoShots } from "@/lib/package";
 import { formatDuration, formatUsd } from "@/lib/format";
 import { Button, ProgressBar, cn } from "@/components/ui";
+import { VersionBadge } from "@/components/versions/VersionBadge";
 
 function budgetFraction(estimate: number, budget: number): number {
   if (!Number.isFinite(budget) || budget <= 0) return estimate > 0 ? 1 : 0;
@@ -23,6 +24,9 @@ export function CheckpointHeader({
   onApprove,
   onRevert,
   onLeave,
+  onEditStory,
+  version,
+  renderCostUsd,
 }: {
   pkg: ProductionPackage;
   locked: boolean;
@@ -36,8 +40,13 @@ export function CheckpointHeader({
   onApprove: () => void;
   onRevert: () => void;
   onLeave: () => void;
+  onEditStory: () => void;
+  version: number;
+  /** For a revision: the estimate for just the nodes that render (the rest are reused). */
+  renderCostUsd: number | null;
 }) {
-  const estimate = estimatedTotalUsd(pkg);
+  const fullEstimate = estimatedTotalUsd(pkg);
+  const estimate = renderCostUsd ?? fullEstimate;
   const budget = pkg.meta.budget_usd;
   const fraction = budgetFraction(estimate, budget);
   const over = estimate > budget;
@@ -47,7 +56,10 @@ export function CheckpointHeader({
     <div className="pt-3">
       <div className="flex flex-wrap items-start justify-between gap-x-6 gap-y-3">
         <div className="min-w-0 flex-1">
-          <h1 className="truncate text-xl font-semibold">{pkg.meta.title}</h1>
+          <div className="flex items-center gap-2">
+            <h1 className="truncate text-xl font-semibold">{pkg.meta.title}</h1>
+            <VersionBadge version={version} />
+          </div>
           <div className="mt-0.5 flex flex-wrap items-center gap-x-2 text-xs text-fg-subtle">
             <span className="font-mono">{pkg.project_id}</span>
             <span aria-hidden>·</span>
@@ -71,6 +83,11 @@ export function CheckpointHeader({
             {approved ? "Back" : "Reject"}
           </Button>
           {!approved && (
+            <Button variant="secondary" onClick={onEditStory} disabled={busy}>
+              Edit story
+            </Button>
+          )}
+          {!approved && (
             <>
               <Button variant="secondary" onClick={onSave} disabled={busy || locked}>
                 {saving ? "Saving..." : "Save changes"}
@@ -89,7 +106,9 @@ export function CheckpointHeader({
         <span className="tabular-nums">{videoShots(pkg).length} shots</span>
         <span aria-hidden>·</span>
         <span className={cn("tabular-nums", over && "text-danger")}>
-          {formatUsd(estimate)} of {formatUsd(budget)}
+          {renderCostUsd === null
+            ? `${formatUsd(estimate)} of ${formatUsd(budget)}`
+            : `est. ${formatUsd(estimate)} to render (${formatUsd(fullEstimate)} without reuse) of ${formatUsd(budget)}`}
         </span>
         <ProgressBar
           className="w-32"

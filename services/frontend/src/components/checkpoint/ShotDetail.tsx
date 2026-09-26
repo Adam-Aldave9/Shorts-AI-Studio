@@ -2,6 +2,7 @@
 
 import type { Asset } from "@/api/client";
 import { shotDurationS } from "@/lib/package";
+import type { NodeReuse } from "@/lib/reuse";
 import { formatDuration, formatUsd } from "@/lib/format";
 import { Button, PromptBudget, cn } from "@/components/ui";
 
@@ -29,6 +30,55 @@ function NodeLink({ nodeId, onOpen }: { nodeId: string; onOpen: (nodeId: string)
   );
 }
 
+export function RerenderToggle({
+  reuse,
+  cascade = [],
+  readOnly,
+  onToggle,
+  onOpenNode,
+}: {
+  reuse: NodeReuse;
+  cascade?: string[];
+  readOnly: boolean;
+  onToggle: () => void;
+  onOpenNode?: (nodeId: string) => void;
+}) {
+  if (reuse.forcedBy) {
+    return (
+      <p className="text-xs text-fg-subtle">
+        Renders again because its start frame {reuse.forcedBy} re-renders.
+      </p>
+    );
+  }
+  return (
+    <div className="rounded-md border border-accent/30 bg-accent/10 px-3 py-2 text-xs">
+      <label className="flex items-center gap-2 text-fg">
+        <input type="checkbox" checked={reuse.rerender} disabled={readOnly} onChange={onToggle} />
+        Re-render anyway
+        <span className="text-fg-subtle">
+          {reuse.rerender
+            ? "- a fresh take renders at approve"
+            : `- otherwise the ${reuse.source} render is reused for $0`}
+        </span>
+      </label>
+      {cascade.length > 0 && (
+        <div className="mt-1 flex flex-wrap items-center gap-1.5 text-fg-subtle">
+          Also re-renders
+          {cascade.map((nodeId) =>
+            onOpenNode ? (
+              <NodeLink key={nodeId} nodeId={nodeId} onOpen={onOpenNode} />
+            ) : (
+              <span key={nodeId} className="font-mono">
+                {nodeId}
+              </span>
+            ),
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function ShotDetail({
   asset,
   position,
@@ -42,6 +92,9 @@ export function ShotDetail({
   onReset,
   onMove,
   onOpenNode,
+  reuse,
+  cascade,
+  onToggleRerender,
 }: {
   asset: Asset;
   /** 1-based index within the currently filtered list. */
@@ -58,6 +111,11 @@ export function ShotDetail({
   onReset: () => void;
   onMove: (delta: number) => void;
   onOpenNode: (nodeId: string) => void;
+  /** Set when an earlier version already rendered exactly this node. */
+  reuse: NodeReuse | null;
+  /** For a reused image: the reused shots animated from it, which re-render with it. */
+  cascade: string[];
+  onToggleRerender: () => void;
 }) {
   const isVoiceover = asset.type === "voiceover";
   const references = asset.reference_image_ids ?? [];
@@ -121,6 +179,15 @@ export function ShotDetail({
           onChange={(event) => onChange(event.target.value)}
         />
         <PromptBudget value={value} limit={limit} />
+        {reuse && (
+          <RerenderToggle
+            reuse={reuse}
+            cascade={cascade}
+            readOnly={readOnly}
+            onToggle={onToggleRerender}
+            onOpenNode={onOpenNode}
+          />
+        )}
       </div>
 
       {(references.length > 0 || usedBy.length > 0 || dependsOn.length > 0) && (

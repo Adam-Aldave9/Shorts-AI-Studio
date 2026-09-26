@@ -9,6 +9,7 @@ import Planning from "@/routes/Planning";
 import Checkpoint from "@/routes/Checkpoint";
 import Status from "@/routes/Status";
 import Result from "@/routes/Result";
+import Revise from "@/routes/Revise";
 import History from "@/routes/History";
 import Login from "@/routes/Login";
 import Register from "@/routes/Register";
@@ -37,6 +38,7 @@ const router = createBrowserRouter([
           { path: "checkpoint/:projectId", element: <Checkpoint /> },
           { path: "status/:projectId", element: <Status /> },
           { path: "result/:projectId", element: <Result /> },
+          { path: "revise/:projectId", element: <Revise /> },
           { path: "history", element: <History /> },
         ],
       },
