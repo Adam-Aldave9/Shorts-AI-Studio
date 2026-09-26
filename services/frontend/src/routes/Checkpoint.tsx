@@ -45,6 +45,7 @@ export default function Checkpoint() {
         pkg={pkg}
         locked={locked}
         approved={approved}
+        phase={statusQuery.data?.phase ?? null}
       />
     </div>
   );

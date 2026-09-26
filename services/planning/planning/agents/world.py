@@ -11,7 +11,7 @@ machinery with zero execution-tier changes.
 
 The world is **generated only on the real, keyed path**. ``MOCK=true`` / no
 ``ANTHROPIC_API_KEY`` still short-circuits to the hand-authored rainforest package
-(``graph._use_mock``), so the $0 path is unchanged. ``planning.world.load_world``
+(``graph.use_mock``), so the $0 path is unchanged. ``planning.world.load_world``
 remains as the fixture loader (tests + optional ``WORLD_PATH`` pin).
 
 Mirrors the other agents: a pure ``build_prompt`` + ``parse`` over the swappable
@@ -33,10 +33,12 @@ SYSTEM = (
     "premise you invent the fixed cast and set for a narrated animated film: the "
     "characters and locations every later step will draw from. Produce 2-5 "
     "characters and 3-6 locations. Give each a stable id (characters `char_*`, "
-    "locations `loc_*`), a short name, and a vivid `canonical_description` that "
-    "(a) is concrete enough to redraw the entity identically across dozens of shots "
-    "and (b) states the visual style verbatim so every shot inherits it. Ground the "
-    "world in the premise — a lighthouse premise gives a lighthouse and its keeper, "
+    "locations `loc_*`), a short name, and a `canonical_description` concrete "
+    "enough to redraw the entity identically across dozens of shots. Keep each "
+    "canonical_description under 500 characters. Lead with identity-defining visual "
+    "traits (age, build, face, hair, clothing, signature props), and end with one "
+    "short sentence stating the visual style, worded identically for every entity. "
+    "Ground the world in the premise — a lighthouse premise gives a lighthouse and its keeper, "
     "not a jungle. Do not fill in any reference image ids. Return only the "
     "structured world."
 )
@@ -49,9 +51,12 @@ def build_prompt(brief: dict) -> Messages:
         f"Premise:\n{brief['premise']}\n\n"
         f"Visual style: {style}.\n\n"
         "Invent the world for this film: 2-5 characters and 3-6 locations. "
-        "Each needs a stable id, a short name, and a canonical_description that "
-        "bakes in the visual style and is detailed enough to redraw identically "
-        "across many shots. Leave reference image ids empty."
+        "Each needs a stable id, a short name, and a canonical_description detailed "
+        "enough to redraw identically across many shots. Keep each canonical_description "
+        "under 500 characters. Lead with identity-defining visual traits (age, build, "
+        "face, hair, clothing, signature props), and end with one short sentence stating "
+        "the visual style, worded identically for every entity. Leave reference image "
+        "ids empty."
     )
     return [("system", SYSTEM), ("human", human)]
 

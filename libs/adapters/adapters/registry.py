@@ -6,7 +6,9 @@ from __future__ import annotations
 
 import os
 
-from adapters.base import Adapter
+from schema import ErrorCode
+
+from adapters.base import Adapter, ProviderError
 from adapters.elevenlabs import ElevenLabsAdapter
 from adapters.fal import FalAdapter
 from adapters.mock import MockAdapter
@@ -28,7 +30,11 @@ def provider_of(hint: str) -> str:
 def get_adapter(provider_hint: str) -> Adapter:
     provider = provider_of(provider_hint)
     if provider not in _REAL:
-        raise ValueError(f"unknown provider {provider!r} in hint {provider_hint!r}")
+        raise ProviderError(
+            f"unknown provider {provider!r} in hint {provider_hint!r}",
+            code=ErrorCode.INVALID_INPUT,
+            transient=False,
+        )
     if mock_enabled():
         return MockAdapter(provider)
     return _REAL[provider]()

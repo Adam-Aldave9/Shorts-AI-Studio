@@ -13,6 +13,8 @@ from collections.abc import Callable
 
 from schema import Asset, NodeStatus, ProductionPackage
 
+FAILED_STATUSES = frozenset({NodeStatus.FAILED, NodeStatus.DEAD_LETTERED})
+
 
 class Dag:
     def __init__(self, package: ProductionPackage) -> None:
@@ -23,13 +25,7 @@ class Dag:
         """Pending nodes whose every dependency has succeeded."""
         ready = []
         for node_id, asset in self._assets.items():
-            if asset.status is not NodeStatus.PENDING:
-                continue
-            if all(
-                self._assets[d].status is NodeStatus.SUCCEEDED
-                for d in asset.depends_on
-                if d in self._assets
-            ):
+            if asset.status is NodeStatus.PENDING and self._deps_succeeded(asset):
                 ready.append(node_id)
         return ready
 
@@ -45,7 +41,7 @@ class Dag:
         """The run can make no further progress yet isn't done: nothing is ready,
         nothing is in flight, and not everything succeeded — so a ``failed`` or
         ``dead-lettered`` node has orphaned its dependents (spec §10.2). The user
-        must edit + re-run the failed nodes to recover.
+        recovers in place by editing and retrying only the failed nodes.
         """
         if self.all_succeeded():
             return False
@@ -54,6 +50,44 @@ class Dag:
         return not any(
             a.status is NodeStatus.DISPATCHED for a in self._assets.values()
         )
+
+    def _deps_succeeded(self, asset: Asset) -> bool:
+        return all(
+            self._assets[d].status is NodeStatus.SUCCEEDED
+            for d in asset.depends_on
+            if d in self._assets
+        )
+
+    def blocked_by(self) -> dict[str, list[str]]:
+        """Each pending node that is waiting on a failed node, mapped to the failed
+        nodes anywhere upstream of it."""
+        memo: dict[str, set[str]] = {}
+
+        def failed_upstream(node_id: str) -> set[str]:
+            if node_id not in memo:
+                found: set[str] = set()
+                for dep in self._assets[node_id].depends_on:
+                    if dep not in self._assets:
+                        continue
+                    if self._assets[dep].status in FAILED_STATUSES:
+                        found.add(dep)
+                    found |= failed_upstream(dep)
+                memo[node_id] = found
+            return memo[node_id]
+
+        return {
+            node_id: sorted(failed)
+            for node_id, asset in self._assets.items()
+            if asset.status is NodeStatus.PENDING and (failed := failed_upstream(node_id))
+        }
+
+    def is_editable(self, node_id: str) -> bool:
+        """A failed node, or a pending one that can't dispatch yet. A node about to
+        dispatch, in flight, or done is never edited under the worker."""
+        asset = self._assets[node_id]
+        if asset.status in FAILED_STATUSES:
+            return True
+        return asset.status is NodeStatus.PENDING and not self._deps_succeeded(asset)
 
     def critical_path_estimate(
         self, weight: Callable[[Asset], float] | None = None

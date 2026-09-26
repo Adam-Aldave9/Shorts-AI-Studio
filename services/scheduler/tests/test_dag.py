@@ -108,3 +108,43 @@ def test_is_blocked_only_when_nothing_can_progress():
 
     # Everything succeeded -> complete, not blocked.
     assert not Dag(_pkg({"ref_a": S, "narration": S, "shot_a": S})).is_blocked()
+
+
+def _chain(ref: NodeStatus, shot_a: NodeStatus, shot_b: NodeStatus) -> Dag:
+    """ref -> shot_a -> shot_b: a continuation edge chains the two shots."""
+    return Dag(ProductionPackage(
+        project_id="p1",
+        meta=Meta(
+            title="T", premise="P", target_duration_s=6, style="s",
+            narration_voice_id="v", budget_usd=100.0,
+        ),
+        assets=[
+            Asset(node_id="ref", type=AssetType.IMAGE, status=ref),
+            Asset(node_id="shot_a", type=AssetType.VIDEO, depends_on=["ref"], status=shot_a),
+            Asset(node_id="shot_b", type=AssetType.VIDEO, depends_on=["ref", "shot_a"], status=shot_b),
+        ],
+    ))
+
+
+def test_blocked_by_maps_pending_nodes_to_failed_ancestors():
+    S, P, D = NodeStatus.SUCCEEDED, NodeStatus.PENDING, NodeStatus.DEAD_LETTERED
+    assert _chain(S, D, P).blocked_by() == {"shot_b": ["shot_a"]}
+    assert _chain(NodeStatus.FAILED, P, P).blocked_by() == {"shot_a": ["ref"], "shot_b": ["ref"]}
+    assert _chain(S, S, P).blocked_by() == {}
+    assert _chain(S, NodeStatus.DISPATCHED, P).blocked_by() == {}
+
+
+def test_is_editable_truth_table():
+    S, P, D = NodeStatus.SUCCEEDED, NodeStatus.PENDING, NodeStatus.DEAD_LETTERED
+    dag = _chain(S, D, P)
+    assert dag.is_editable("shot_a")  # failed
+    assert dag.is_editable("shot_b")  # pending, waiting on a failed dep
+    assert not dag.is_editable("ref")  # succeeded
+
+    dag = _chain(S, NodeStatus.DISPATCHED, P)
+    assert not dag.is_editable("shot_a")  # rendering
+    assert dag.is_editable("shot_b")  # pending, its dep still rendering
+
+    dag = _chain(S, S, P)
+    assert not dag.is_editable("shot_b")  # ready: about to dispatch
+    assert _chain(S, NodeStatus.FAILED, P).is_editable("shot_a")

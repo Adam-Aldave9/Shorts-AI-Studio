@@ -13,9 +13,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from schema import AssetType, ProductionPackage
+from schema import Asset, AssetType, ProductionPackage, prompt_max_bytes, utf8_len
 
-__all__ = ["ValidationReport", "validate_package"]
+__all__ = ["ValidationReport", "content_errors", "validate_package"]
 
 # 1.1 adds the optional, display-only ``narrative`` block; packages written at 1.0 are
 # still valid and must keep re-running.
@@ -49,6 +49,17 @@ def _is_acyclic(package: ProductionPackage) -> bool:
         return True
 
     return all(visit(n) for n in ids)
+
+
+def content_errors(asset: Asset) -> list[str]:
+    limit = prompt_max_bytes(asset.provider_hint)
+    size = utf8_len(asset.prompt)
+    if limit is None or size <= limit:
+        return []
+    return [
+        f"{asset.node_id} prompt is {size} bytes; {asset.provider_hint} accepts at most "
+        f"{limit} (counted in UTF-8 bytes, so accents and typographic punctuation count extra)"
+    ]
 
 
 def validate_package(package: ProductionPackage, *, tolerance_s: float = 5.0) -> ValidationReport:
@@ -96,6 +107,9 @@ def validate_package(package: ProductionPackage, *, tolerance_s: float = 5.0) ->
             f"shot durations sum to {shot_total:.1f}s, "
             f"target is {package.meta.target_duration_s:.1f}s"
         )
+
+    for asset in package.assets:
+        report.errors.extend(content_errors(asset))
 
     # Estimated cost must be under budget.
     est = sum(a.estimated_cost_usd for a in package.assets)

@@ -47,17 +47,21 @@ const PHASE_COLORS: Record<string, string> = {
   paused: "bg-amber-500/10 text-amber-300 border-amber-500/30",
 };
 
+const PHASE_LABELS: Record<string, string> = {
+  blocked: "needs input",
+};
+
 export function PhaseBadge({ phase }: { phase: string | null }) {
-  const label = phase ?? "queued";
+  const key = phase ?? "queued";
   return (
     <span
       className={cn(
         "inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium capitalize",
-        PHASE_COLORS[label] ?? PHASE_COLORS.queued,
+        PHASE_COLORS[key] ?? PHASE_COLORS.queued,
       )}
     >
-      <StatusDot live={LIVE_STATES.has(label)} />
-      {label}
+      <StatusDot live={LIVE_STATES.has(key)} />
+      {PHASE_LABELS[key] ?? key}
     </span>
   );
 }

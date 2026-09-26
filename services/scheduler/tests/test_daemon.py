@@ -149,3 +149,71 @@ def test_budget_exceeded_parks_paused_without_dispatch():
         assert await state.get_project_phase("p1") == state.PHASE_PAUSED
 
     _run(scenario)
+
+
+def test_blocked_run_with_ready_work_self_heals_and_dispatches():
+    S, P = NodeStatus.SUCCEEDED, NodeStatus.PENDING
+
+    async def scenario(sends):
+        await state.set_project_phase("p1", state.PHASE_BLOCKED)
+        # A retry reset the failed ref to pending: it is ready again.
+        pkg = _pkg({"ref_a": P, "narration": S, "shot_a": P})
+        await daemon._advance(pkg)
+
+        assert await state.get_project_phase("p1") == state.PHASE_EXECUTING
+        assert [args[1] for name, args, _ in sends if name == RENDER_TASK] == ["ref_a"]
+
+    _run(scenario)
+
+
+def test_blocked_run_with_only_orphans_stays_blocked():
+    D, S, P = NodeStatus.DEAD_LETTERED, NodeStatus.SUCCEEDED, NodeStatus.PENDING
+
+    async def scenario(sends):
+        await state.set_project_phase("p1", state.PHASE_BLOCKED)
+        await daemon._advance(_pkg({"ref_a": D, "narration": S, "shot_a": P}))
+
+        assert sends == []
+        assert await state.get_project_phase("p1") == state.PHASE_BLOCKED
+
+    _run(scenario)
+
+
+def test_fast_worker_failure_is_not_overwritten_by_dispatched():
+    P = NodeStatus.PENDING
+    S = NodeStatus.SUCCEEDED
+
+    async def scenario(sends):
+        loop = asyncio.get_running_loop()
+        tasks = []
+
+        def failing_send_task(name, args=None, queue=None, **_):
+            sends.append((name, args, queue))
+            tasks.append(loop.create_task(
+                state.set_node_status(args[0], args[1], NodeStatus.DEAD_LETTERED, error="fast")
+            ))
+
+        daemon.celery_app.send_task = failing_send_task
+        await daemon._advance(_pkg({"ref_a": S, "narration": S, "shot_a": P}))
+        for _ in range(5):
+            await asyncio.sleep(0)
+        await asyncio.gather(*tasks)
+
+        assert (await state.get_node("p1", "shot_a"))["status"] == NodeStatus.DEAD_LETTERED.value
+
+    _run(scenario)
+
+
+def test_send_failure_returns_the_node_to_pending():
+    P, S = NodeStatus.PENDING, NodeStatus.SUCCEEDED
+
+    async def scenario(sends):
+        def broken_send_task(*_args, **_kwargs):
+            raise ConnectionError("broker down")
+
+        daemon.celery_app.send_task = broken_send_task
+        with pytest.raises(ConnectionError):
+            await daemon._advance(_pkg({"ref_a": S, "narration": S, "shot_a": P}))
+        assert (await state.get_node("p1", "shot_a"))["status"] == NodeStatus.PENDING.value
+
+    _run(scenario)

@@ -7,6 +7,6 @@ That split keeps every agent unit-testable with no network: tests exercise
 verification), and inject a fake ``call`` into ``run``.
 """
 
-from planning.agents import breakdown, prompts, script, world
+from planning.agents import breakdown, prompts, revise, script, world
 
-__all__ = ["world", "script", "breakdown", "prompts"]
+__all__ = ["world", "script", "breakdown", "prompts", "revise"]

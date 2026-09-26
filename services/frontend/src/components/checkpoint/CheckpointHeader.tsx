@@ -18,6 +18,7 @@ export function CheckpointHeader({
   dirty,
   saving,
   approving,
+  approveBlocked = false,
   onSave,
   onApprove,
   onRevert,
@@ -29,6 +30,8 @@ export function CheckpointHeader({
   dirty: boolean;
   saving: boolean;
   approving: boolean;
+  /** A known validation failure (e.g. an over-limit prompt) that approval would hit. */
+  approveBlocked?: boolean;
   onSave: () => void;
   onApprove: () => void;
   onRevert: () => void;
@@ -72,7 +75,7 @@ export function CheckpointHeader({
               <Button variant="secondary" onClick={onSave} disabled={busy || locked}>
                 {saving ? "Saving..." : "Save changes"}
               </Button>
-              <Button onClick={onApprove} disabled={busy || locked}>
+              <Button onClick={onApprove} disabled={busy || locked || approveBlocked}>
                 {approving ? "Approving..." : "Approve & run"}
               </Button>
             </>

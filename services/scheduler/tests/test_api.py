@@ -144,8 +144,14 @@ def test_status_event_carries_live_node_phase_cost_and_final_url():
         assert frame["complete"] is False
 
         nodes = frame["nodes"]
-        assert nodes["ref_a"] == {"status": "succeeded", "attempts": 1, "error": None}
-        assert nodes["shot_a"] == {"status": "failed", "attempts": 2, "error": "boom"}
+        assert nodes["ref_a"] == {
+            "status": "succeeded", "attempts": 1, "error": None,
+            "error_code": None, "error_detail": None, "blocked_by": [],
+        }
+        assert nodes["shot_a"] == {
+            "status": "failed", "attempts": 2, "error": "boom",
+            "error_code": None, "error_detail": None, "blocked_by": [],
+        }
 
     _run(scenario)
 
@@ -209,7 +215,7 @@ def test_update_package_after_approval_is_409():
 
 def test_approve_twice_is_409():
     async def scenario(_client):
-        await main.create_package(_pkg(), user_id="user_a")
+        await main.create_package(_valid_pkg(), user_id="user_a")
         assert await main.approve("p1") == {"status": "approved"}
 
         with pytest.raises(main.HTTPException) as exc:
@@ -260,5 +266,230 @@ def test_package_status_reports_approval_and_phase():
         after = await main.package_status("p1")
         assert after.approved is True
         assert after.phase == "executing"
+
+    _run(scenario)
+
+
+def test_approve_rejects_an_over_limit_prompt():
+    async def scenario(_client):
+        pkg = _valid_pkg()
+        pkg.assets[1].provider_hint = "fal:pixverse-v6-i2v"
+        pkg.assets[1].prompt = "a" * 2049
+        await main.create_package(pkg, user_id="user_a")
+        with pytest.raises(main.HTTPException) as exc:
+            await main.approve("p1")
+        assert exc.value.status_code == 422
+        assert "shot_a prompt is 2049 bytes" in exc.value.detail[0]
+        assert await state.is_package_approved("p1") is False
+
+    _run(scenario)
+
+
+def test_limits_lists_provider_byte_limits():
+    result = asyncio.run(main.limits())
+    assert result.prompt_max_bytes == {"fal:pixverse-v6-i2v": 2048}
+
+
+# --- In-place recovery: PATCH a failed/waiting node, POST /retry ---
+
+
+def _recovery_pkg() -> ProductionPackage:
+    """ref_a -> shot_a -> shot_b, plus narration; every node renderable."""
+    pkg = _valid_pkg()
+    pkg.assets[0].provider_hint = "fal:flux-schnell"
+    pkg.assets[0].prompt = "a tree"
+    pkg.assets[1].provider_hint = "fal:pixverse-v6-i2v"
+    pkg.assets[1].prompt = "a tree sways"
+    pkg.assets.append(Asset(
+        node_id="shot_b", type=AssetType.VIDEO, depends_on=["ref_a", "shot_a"],
+        reference_image_ids=["ref_a"], provider_hint="fal:pixverse-v6-i2v", prompt="leaves fall",
+    ))
+    pkg.assets.append(Asset(
+        node_id="narration", type=AssetType.VOICEOVER, provider_hint="elevenlabs:flash-v2.5",
+        text="Once upon a time.", spec={"voice_id": "v1"},
+    ))
+    return pkg
+
+
+async def _blocked_run(*, phase: str = state.PHASE_BLOCKED) -> None:
+    await state.save_package(_recovery_pkg(), approved=True, owner_id="user_a")
+    await state.set_node_status("p1", "ref_a", NodeStatus.SUCCEEDED)
+    await state.set_node_status("p1", "narration", NodeStatus.SUCCEEDED)
+    await state.increment_attempts("p1", "shot_a")
+    await state.set_node_status(
+        "p1", "shot_a", NodeStatus.DEAD_LETTERED,
+        error="flagged", error_code="content_policy", error_detail="fal fetch HTTP 422: {}",
+    )
+    await state.set_project_phase("p1", phase)
+
+
+async def _raw_asset(client, node_id: str) -> Asset:
+    spec = ProductionPackage.model_validate_json(await client.get("pkg:p1"))
+    return spec.asset_by_id(node_id)
+
+
+def _status_code(coro) -> int:
+    async def inner():
+        with pytest.raises(main.HTTPException) as exc:
+            await coro
+        return exc.value.status_code
+    return inner()
+
+
+def test_patch_dead_lettered_node_saves_the_prompt():
+    async def scenario(client):
+        await _blocked_run()
+        asset = await main.edit_node("p1", "shot_a", main.NodeEdit(prompt="a calm tree"))
+        assert asset.prompt == "a calm tree"
+        assert asset.status is NodeStatus.DEAD_LETTERED  # saving alone doesn't retry
+        assert (await _raw_asset(client, "shot_a")).prompt == "a calm tree"
+
+    _run(scenario)
+
+
+def test_patch_pending_node_waiting_on_a_failed_dependency():
+    async def scenario(client):
+        await _blocked_run()
+        asset = await main.edit_node("p1", "shot_b", main.NodeEdit(prompt="leaves drift"))
+        assert asset.prompt == "leaves drift"
+
+    _run(scenario)
+
+
+def test_patch_voiceover_text_and_voice():
+    async def scenario(client):
+        await _blocked_run()
+        await state.set_node_status("p1", "narration", NodeStatus.DEAD_LETTERED, error="voice")
+        asset = await main.edit_node(
+            "p1", "narration", main.NodeEdit(text="Hello there.", voice_id="v2")
+        )
+        assert asset.text == "Hello there." and asset.spec["voice_id"] == "v2"
+
+    _run(scenario)
+
+
+def test_patch_conflicts():
+    async def scenario(client):
+        await _blocked_run()
+        edit = main.NodeEdit(prompt="x")
+        assert await _status_code(main.edit_node("p1", "ref_a", edit)) == 409  # succeeded
+
+        await state.set_node_status("p1", "shot_a", NodeStatus.DISPATCHED)
+        assert await _status_code(main.edit_node("p1", "shot_a", edit)) == 409  # rendering
+
+        await state.set_node_status("p1", "shot_a", NodeStatus.SUCCEEDED)
+        assert await _status_code(main.edit_node("p1", "shot_b", edit)) == 409  # ready
+
+        assert await _status_code(main.edit_node("p1", "ghost", edit)) == 404
+
+    _run(scenario)
+
+
+@pytest.mark.parametrize("phase", [state.PHASE_PAUSED, state.PHASE_COMPLETE, state.PHASE_COMPOSITING])
+def test_patch_and_retry_refuse_finished_or_paused_runs(phase):
+    async def scenario(client):
+        await _blocked_run(phase=phase)
+        assert await _status_code(main.edit_node("p1", "shot_a", main.NodeEdit(prompt="x"))) == 409
+        assert await _status_code(main.retry("p1", main.RetryRequest())) == 409
+
+    _run(scenario)
+
+
+def test_patch_and_retry_refuse_unapproved_runs():
+    async def scenario(client):
+        await state.save_package(_recovery_pkg(), owner_id="user_a")
+        assert await _status_code(main.edit_node("p1", "shot_a", main.NodeEdit(prompt="x"))) == 409
+        assert await _status_code(main.retry("p1", main.RetryRequest())) == 409
+
+    _run(scenario)
+
+
+def test_patch_validation_errors():
+    async def scenario(client):
+        await _blocked_run()
+        cases = [
+            main.NodeEdit(prompt="a" * 2049),  # over the byte limit
+            main.NodeEdit(prompt="   "),  # blank
+            main.NodeEdit(text="narration on a video"),  # wrong field for the type
+            main.NodeEdit(),  # nothing to change
+        ]
+        for edit in cases:
+            assert await _status_code(main.edit_node("p1", "shot_a", edit)) == 422
+        await state.set_node_status("p1", "narration", NodeStatus.FAILED)
+        assert await _status_code(
+            main.edit_node("p1", "narration", main.NodeEdit(prompt="x"))
+        ) == 422
+        assert (await _raw_asset(client, "shot_a")).prompt == "a tree sways"
+
+    _run(scenario)
+
+
+def test_retry_resets_the_failed_node_and_leaves_the_phase():
+    async def scenario(client):
+        await _blocked_run()
+        result = await main.retry("p1", main.RetryRequest(node_ids=["shot_a"]))
+        assert result.phase == state.PHASE_BLOCKED  # the daemon self-heals it
+        node = await state.get_node("p1", "shot_a")
+        assert node == {"status": "pending", "attempts": "1"}
+
+    _run(scenario)
+
+
+def test_retry_defaults_to_every_failed_node():
+    async def scenario(client):
+        await _blocked_run()
+        await state.set_node_status("p1", "narration", NodeStatus.FAILED, error="busy")
+        await main.retry("p1", None)
+        assert (await state.get_node("p1", "shot_a"))["status"] == "pending"
+        assert (await state.get_node("p1", "narration"))["status"] == "pending"
+
+    _run(scenario)
+
+
+def test_retry_errors():
+    async def scenario(client):
+        await _blocked_run()
+        assert await _status_code(main.retry("p1", main.RetryRequest(node_ids=["ref_a"]))) == 409
+        assert await _status_code(main.retry("p1", main.RetryRequest(node_ids=["ghost"]))) == 404
+
+        # A legacy over-limit prompt must be fixed before it can be retried.
+        spec = ProductionPackage.model_validate_json(await client.get("pkg:p1"))
+        spec.asset_by_id("shot_a").prompt = "a" * 2049
+        await client.set("pkg:p1", spec.model_dump_json())
+        assert await _status_code(main.retry("p1", main.RetryRequest(node_ids=["shot_a"]))) == 422
+
+        await state.set_node_status("p1", "shot_a", NodeStatus.SUCCEEDED)
+        assert await _status_code(main.retry("p1", main.RetryRequest())) == 409  # nothing to retry
+
+    _run(scenario)
+
+
+def test_status_event_carries_error_code_and_blocked_by():
+    async def scenario(client):
+        await _blocked_run()
+        frame = await main._status_event("p1")
+        shot_a, shot_b = frame["nodes"]["shot_a"], frame["nodes"]["shot_b"]
+        assert shot_a["error_code"] == "content_policy"
+        assert shot_a["error_detail"] == "fal fetch HTTP 422: {}"
+        assert shot_b["blocked_by"] == ["shot_a"]
+
+    _run(scenario)
+
+
+def test_event_stream_stays_open_while_blocked(monkeypatch):
+    async def no_sleep(_s):
+        return None
+
+    monkeypatch.setattr(main.asyncio, "sleep", no_sleep)
+
+    async def scenario(client):
+        await _blocked_run()
+        response = await main.events("p1")
+        frames = []
+        async for frame in response.body_iterator:
+            frames.append(frame)
+            if len(frames) == 3:
+                break
+        assert len(frames) == 3
 
     _run(scenario)

@@ -53,7 +53,7 @@ _DEFAULT_MOCK_PACKAGE = _REPO_ROOT / "data" / "example-packages" / "rainforest-9
 _TRUTHY = {"1", "true", "yes", "on"}
 
 
-def _use_mock() -> bool:
+def use_mock() -> bool:
     """Mock when explicitly asked, or whenever there is no key to spend (so a bare
     checkout runs the whole front for $0)."""
     if os.environ.get("MOCK", "").strip().lower() in _TRUTHY:
@@ -281,7 +281,7 @@ async def run_planning(
     thread so the blocking LLM calls don't stall the FastAPI event loop; the callbacks
     are invoked from that thread as each node completes.
     """
-    if _use_mock():
+    if use_mock():
         log.info("planning: MOCK fallback -> hand-authored package")
         return await _run_mock(brief, on_stage, on_detail)
     return await asyncio.to_thread(_run_chain_sync, brief, on_stage, on_detail)

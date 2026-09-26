@@ -3,7 +3,9 @@
 import { useCallback, useMemo, useState } from "react";
 import type { Asset, ProductionPackage } from "@/api/client";
 import type { PackageDraftApi } from "@/hooks/usePackageDraft";
+import { usePromptLimits } from "@/hooks/usePromptLimits";
 import { referenceImages, videoShots } from "@/lib/package";
+import { utf8Bytes } from "@/lib/promptBudget";
 import { EmptyState, Tabs, controlClass } from "@/components/ui";
 import { ShotRail } from "./ShotRail";
 import { ShotDetail } from "./ShotDetail";
@@ -40,6 +42,7 @@ export function ShotWorkbench({
   const [kind, setKind] = useState<AssetKind>("video");
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [filter, setFilter] = useState("");
+  const limitFor = usePromptLimits();
 
   // From `pkg`, not `merged`: `merged` allocates fresh asset objects on every keystroke,
   // which would kill the rail rows' memo.
@@ -59,6 +62,15 @@ export function ShotWorkbench({
   const position = active ? visible.indexOf(active) + 1 : 0;
 
   const onSelect = useCallback((nodeId: string) => setSelectedNodeId(nodeId), []);
+
+  const hintOf = useMemo(
+    () => new Map((pkg.assets ?? []).map((asset) => [asset.node_id, asset.provider_hint])),
+    [pkg],
+  );
+  const isOverLimit = (nodeId: string) => {
+    const limit = limitFor(hintOf.get(nodeId));
+    return limit !== undefined && utf8Bytes(nodeValue(nodeId)) > limit;
+  };
 
   const onMove = useCallback(
     (delta: number) => {
@@ -113,6 +125,7 @@ export function ShotWorkbench({
             selectedNodeId={active?.node_id ?? null}
             valueOf={nodeValue}
             isEdited={isNodeDirty}
+            isOverLimit={isOverLimit}
             onSelect={onSelect}
             onMove={onMove}
           />
@@ -126,6 +139,7 @@ export function ShotWorkbench({
               edited={isNodeDirty(active.node_id)}
               readOnly={readOnly}
               usedBy={usedBy[active.node_id] ?? []}
+              limit={limitFor(active.provider_hint)}
               onChange={(value) => setNode(active.node_id, value)}
               onReset={() => resetNode(active.node_id)}
               onMove={onMove}

@@ -6,13 +6,27 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
+from schema import TRANSIENT_CODES, ErrorCode
+
 
 class ProviderError(Exception):
-    """Raised by an adapter. ``transient`` controls retry vs dead-letter."""
+    """Raised by an adapter. ``transient`` controls retry vs dead-letter and defaults
+    to what ``code`` implies; ``cost_usd`` is spend the provider billed despite failing."""
 
-    def __init__(self, message: str, *, transient: bool = True) -> None:
+    def __init__(
+        self,
+        message: str,
+        *,
+        transient: bool | None = None,
+        code: ErrorCode = ErrorCode.UNKNOWN,
+        detail: str | None = None,
+        cost_usd: float = 0.0,
+    ) -> None:
         super().__init__(message)
-        self.transient = transient
+        self.code = ErrorCode(code)
+        self.transient = self.code in TRANSIENT_CODES if transient is None else transient
+        self.detail = detail
+        self.cost_usd = cost_usd
 
 
 @dataclass

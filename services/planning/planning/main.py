@@ -24,15 +24,18 @@ from concurrent.futures import Future
 from uuid import uuid4
 
 import state
-from auth import auth_router, current_user_id, install_auth, owned_job
+from auth import auth_router, current_user_id, install_auth, owned_job, owned_package
 from auth.config import AUTH_ALLOWED_ORIGINS
-from fastapi import Depends, FastAPI
+from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from schema import ProductionPackage
+from schema import AssetType, ErrorCode, ProductionPackage, prompt_max_bytes, strip_mock_failure
 from sse_starlette.sse import EventSourceResponse
 
-from planning.graph import STAGE_SEQUENCE, run_planning
+from planning.agents import revise
+from planning.graph import STAGE_SEQUENCE, run_planning, use_mock
+from planning.models import PromptRevision
+from planning.prompt_budget import fit_to_bytes, normalize_punctuation
 from planning.validator import ValidationReport, validate_package
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s")
@@ -79,6 +82,17 @@ class PlanningJobAccepted(BaseModel):
     ``/planning/{job_id}`` to follow the job's SSE progress stream."""
 
     job_id: str
+
+
+class SuggestRequest(BaseModel):
+    prompt: str | None = None  # the user's current draft; defaults to the stored prompt
+
+
+class PromptSuggestion(BaseModel):
+    prompt: str
+    notes: str
+    error_code: ErrorCode | None
+    max_bytes: int | None
 
 
 @app.get("/health")
@@ -222,3 +236,55 @@ async def job_events(job_id: str) -> EventSourceResponse:
             await asyncio.sleep(1.0)
 
     return EventSourceResponse(gen())
+
+
+def _error_code(raw: str | None) -> ErrorCode | None:
+    try:
+        return ErrorCode(raw) if raw else None
+    except ValueError:
+        return None
+
+
+@app.post(
+    "/packages/{project_id}/nodes/{node_id}/suggest",
+    response_model=PromptSuggestion,
+    dependencies=[Depends(owned_package)],
+)
+async def suggest_fix(
+    project_id: str, node_id: str, body: SuggestRequest | None = None
+) -> PromptSuggestion:
+    """Propose a rewrite of a failed shot's prompt for its specific error. Never
+    writes: the user reviews the suggestion and saves it through the scheduler."""
+    package = await state.get_package(project_id)
+    if package is None:
+        raise HTTPException(404, "package not found")
+    asset = package.asset_by_id(node_id)
+    if asset is None:
+        raise HTTPException(404, "node not found")
+    if asset.type is AssetType.VOICEOVER:
+        raise HTTPException(422, "Suggest fix rewrites image and video prompts only.")
+
+    draft = body.prompt if body is not None and body.prompt is not None else asset.prompt or ""
+    code = _error_code((await state.get_node(project_id, node_id)).get("error_code"))
+    limit = prompt_max_bytes(asset.provider_hint)
+
+    if use_mock():
+        revision = PromptRevision(
+            prompt=strip_mock_failure(draft),
+            notes="MOCK mode: removed the simulated-failure token; no LLM was called.",
+        )
+    else:
+        try:
+            revision = await asyncio.to_thread(
+                revise.run, draft, code, max_bytes=limit, style=package.meta.style
+            )
+        except Exception:  # noqa: BLE001 - any LLM failure is a bad gateway to the UI
+            log.exception("suggest fix failed for %s/%s", project_id, node_id)
+            raise HTTPException(502, "The AI suggestion failed; try again or edit by hand.")
+
+    return PromptSuggestion(
+        prompt=fit_to_bytes(normalize_punctuation(revision.prompt), limit),
+        notes=revision.notes,
+        error_code=code,
+        max_bytes=limit,
+    )
