@@ -14,8 +14,10 @@ import os
 from typing import Any
 
 import httpx
+from schema import ErrorCode
 
 from adapters.base import JobHandle, JobResult, ProviderError
+from adapters.errors import http_error
 
 ELEVENLABS_BASE = "https://api.elevenlabs.io/v1"
 
@@ -36,6 +38,16 @@ _DEFAULT_MODEL_ID = "eleven_multilingual_v2"
 # Per-character price (USD). ~$0.30 / 1k chars approximates ElevenLabs' creator
 # tier and yields ~$0.34 for the fixture's ~1.1k-char narration, in line with the
 # spec §13.1 ~$0.40 narration estimate. Flash bills at ~half the credit cost.
+# ``detail.status`` -> ErrorCode. It overrides the HTTP status default, since
+# ElevenLabs returns 401 for ``quota_exceeded``.
+_ELEVENLABS_CODES: dict[str, ErrorCode] = {
+    "quota_exceeded": ErrorCode.QUOTA,
+    "invalid_api_key": ErrorCode.AUTH,
+    "voice_not_found": ErrorCode.INVALID_INPUT,
+    "too_many_concurrent_requests": ErrorCode.RATE_LIMITED,
+    "system_busy": ErrorCode.PROVIDER_UNAVAILABLE,
+}
+
 _PRICE_PER_CHAR = 0.0003
 _FLASH_PRICE_PER_CHAR = 0.00015
 
@@ -53,13 +65,19 @@ class ElevenLabsAdapter:
 
     async def submit(self, model: str, payload: dict[str, Any]) -> JobHandle:
         if not self._api_key:
-            raise ProviderError("ELEVENLABS_API_KEY is not set", transient=False)
+            raise ProviderError(
+                "ELEVENLABS_API_KEY is not set", code=ErrorCode.AUTH, transient=False
+            )
         text = payload.get("text")
         if not text:
-            raise ProviderError("elevenlabs requires non-empty text", transient=False)
+            raise ProviderError(
+                "elevenlabs requires non-empty text", code=ErrorCode.INVALID_INPUT, transient=False
+            )
         voice_id = payload.get("voice_id")
         if not voice_id:
-            raise ProviderError("elevenlabs requires a voice_id", transient=False)
+            raise ProviderError(
+                "elevenlabs requires a voice_id", code=ErrorCode.INVALID_INPUT, transient=False
+            )
 
         model_id = _MODEL_IDS.get(model, model or _DEFAULT_MODEL_ID)
         try:
@@ -68,13 +86,12 @@ class ElevenLabsAdapter:
                 json={"text": text, "model_id": model_id},
                 headers={"accept": "audio/mpeg"},
             )
-        except httpx.RequestError as exc:  # network/timeout -> retryable
-            raise ProviderError(f"elevenlabs network error: {exc}", transient=True) from exc
-        if not resp.is_success:
-            transient = resp.status_code >= 500 or resp.status_code == 429
+        except httpx.RequestError as exc:
             raise ProviderError(
-                f"elevenlabs HTTP {resp.status_code}: {resp.text[:500]}", transient=transient
-            )
+                f"elevenlabs network error: {exc}", code=ErrorCode.PROVIDER_UNAVAILABLE
+            ) from exc
+        if not resp.is_success:
+            raise http_error("elevenlabs", "submit", resp, _ELEVENLABS_CODES)
 
         price = _FLASH_PRICE_PER_CHAR if model_id.startswith("eleven_flash") else _PRICE_PER_CHAR
         cost = round(len(text) * price, 4)

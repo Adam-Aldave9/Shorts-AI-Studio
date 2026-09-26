@@ -5,17 +5,9 @@ import { useState, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { useMutation } from "@tanstack/react-query";
 import { submitBrief, type Brief } from "@/api/client";
+import { VOICES } from "@/lib/voices";
 import { Button, Card, ErrorBanner, Field, controlClass } from "@/components/ui";
 
-// Curated ElevenLabs default voice ids. The mock ignores the pick; a real run threads it
-// into the voiceover node.
-const VOICES = [
-  { id: "", name: "Default narrator" },
-  { id: "21m00Tcm4TlvDq8ikWAM", name: "Rachel (warm, female)" },
-  { id: "pNInz6obpgDQGcFmaJgB", name: "Adam (deep, male)" },
-  { id: "ErXwobaYiN019PkySvjV", name: "Antoni (calm, male)" },
-  { id: "EXAVITQu4vr4xnSDxMaL", name: "Bella (soft, female)" },
-];
 const STYLES = ["cinematic", "documentary", "animated", "noir", "nature", "dreamlike"];
 const DURATIONS = [30, 60, 90, 120];
 

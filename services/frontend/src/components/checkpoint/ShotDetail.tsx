@@ -3,7 +3,7 @@
 import type { Asset } from "@/api/client";
 import { shotDurationS } from "@/lib/package";
 import { formatDuration, formatUsd } from "@/lib/format";
-import { Button, cn } from "@/components/ui";
+import { Button, PromptBudget, cn } from "@/components/ui";
 
 function MetaChip({ children }: { children: string }) {
   return (
@@ -37,6 +37,7 @@ export function ShotDetail({
   edited,
   readOnly,
   usedBy,
+  limit,
   onChange,
   onReset,
   onMove,
@@ -51,6 +52,8 @@ export function ShotDetail({
   readOnly: boolean;
   /** For a reference image: the shots that name it in `reference_image_ids`. */
   usedBy: string[];
+  /** The provider's prompt limit in UTF-8 bytes, when it has one. */
+  limit?: number;
   onChange: (value: string) => void;
   onReset: () => void;
   onMove: (delta: number) => void;
@@ -117,7 +120,7 @@ export function ShotDetail({
           spellCheck
           onChange={(event) => onChange(event.target.value)}
         />
-        <div className="text-right text-xs tabular-nums text-fg-subtle">{value.length} chars</div>
+        <PromptBudget value={value} limit={limit} />
       </div>
 
       {(references.length > 0 || usedBy.length > 0 || dependsOn.length > 0) && (

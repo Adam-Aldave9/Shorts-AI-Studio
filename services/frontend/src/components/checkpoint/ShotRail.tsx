@@ -13,6 +13,7 @@ const ShotRow = memo(function ShotRow({
   prompt,
   selected,
   edited,
+  overLimit,
   onSelect,
 }: {
   asset: Asset;
@@ -20,6 +21,7 @@ const ShotRow = memo(function ShotRow({
   prompt: string;
   selected: boolean;
   edited: boolean;
+  overLimit: boolean;
   onSelect: (nodeId: string) => void;
 }) {
   return (
@@ -43,12 +45,23 @@ const ShotRow = memo(function ShotRow({
           {String(index + 1).padStart(2, "0")}
         </span>
         <span className="truncate font-mono text-xs text-fg-muted">{asset.node_id}</span>
-        {edited && (
-          <span
-            className="ml-auto h-1.5 w-1.5 shrink-0 rounded-full bg-accent"
-            title="Edited"
-            aria-label="Edited"
-          />
+        {(edited || overLimit) && (
+          <span className="ml-auto flex shrink-0 items-center gap-1">
+            {overLimit && (
+              <span
+                className="h-1.5 w-1.5 rounded-full bg-danger"
+                title="Prompt over the provider's byte limit"
+                aria-label="Prompt over the byte limit"
+              />
+            )}
+            {edited && (
+              <span
+                className="h-1.5 w-1.5 rounded-full bg-accent"
+                title="Edited"
+                aria-label="Edited"
+              />
+            )}
+          </span>
         )}
       </div>
       <div className="mt-1 line-clamp-2 text-sm text-fg-muted">{prompt || "-"}</div>
@@ -64,6 +77,7 @@ export function ShotRail({
   selectedNodeId,
   valueOf,
   isEdited,
+  isOverLimit,
   onSelect,
   onMove,
 }: {
@@ -71,6 +85,7 @@ export function ShotRail({
   selectedNodeId: string | null;
   valueOf: (nodeId: string) => string;
   isEdited: (nodeId: string) => boolean;
+  isOverLimit: (nodeId: string) => boolean;
   onSelect: (nodeId: string) => void;
   /** -1 / +1 from the arrow keys; the workbench owns the clamping. */
   onMove: (delta: number) => void;
@@ -111,6 +126,7 @@ export function ShotRail({
           prompt={valueOf(asset.node_id)}
           selected={asset.node_id === selectedNodeId}
           edited={isEdited(asset.node_id)}
+          overLimit={isOverLimit(asset.node_id)}
           onSelect={onSelect}
         />
       ))}

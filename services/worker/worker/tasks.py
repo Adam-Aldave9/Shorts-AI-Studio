@@ -1,10 +1,9 @@
 """The render task — one DAG node, end to end (spec §6.3).
 
 A thin Celery wrapper over the pure orchestration in :mod:`worker.render` (the
-same pure-fn + thin-task split the compositor already uses). This layer owns only
-what Celery needs: drive the async render via ``asyncio.run``, retry transient
-provider failures with exponential backoff + jitter, dead-letter permanent ones
-(spec §6.6), and bump the per-node attempt counter for observability/SSE.
+same pure-fn + thin-task split the compositor already uses). Retries live in
+``render``; this layer only turns whatever ended the render into a terminal node
+status, so every dispatched node lands somewhere and the daemon never waits forever.
 """
 
 from __future__ import annotations
@@ -15,46 +14,40 @@ import logging
 import state
 from adapters import ProviderError
 from celery import shared_task
-from schema import NodeStatus
-from tenacity import (
-    retry,
-    retry_if_exception,
-    stop_after_attempt,
-    wait_exponential_jitter,
-)
+from schema import ErrorCode, NodeStatus
 
 from worker import render
 
 log = logging.getLogger("worker.render")
 
 
-def _is_transient(exc: BaseException) -> bool:
-    return isinstance(exc, ProviderError) and exc.transient
+def failure_fields(exc: BaseException) -> tuple[NodeStatus, dict[str, str | None]]:
+    if isinstance(exc, ProviderError):
+        status = NodeStatus.FAILED if exc.transient else NodeStatus.DEAD_LETTERED
+        return status, {"error": str(exc), "error_code": exc.code.value, "error_detail": exc.detail}
+    return NodeStatus.FAILED, {
+        "error": "Unexpected error while rendering this node.",
+        "error_code": ErrorCode.INTERNAL.value,
+        "error_detail": f"{type(exc).__name__}: {exc}"[:500],
+    }
 
 
-@retry(
-    retry=retry_if_exception(_is_transient),
-    wait=wait_exponential_jitter(initial=1, max=30),
-    stop=stop_after_attempt(3),
-    reraise=True,
-)
-async def _attempt(project_id: str, node_id: str) -> float:
-    # One increment per try (including retries) so SSE can show progress/stragglers.
-    await state.increment_attempts(project_id, node_id)
-    return await render.render_node(project_id, node_id)
+async def execute(project_id: str, node_id: str) -> dict:
+    try:
+        cost = await render.render_node(project_id, node_id)
+    except Exception as exc:
+        if isinstance(exc, ProviderError):
+            log.error("node=%s failed [%s]: %s", node_id, exc.code, exc)
+        else:
+            log.exception("node=%s crashed", node_id)
+        status, fields = failure_fields(exc)
+        await state.set_node_status(project_id, node_id, status, **fields)
+        return {"node_id": node_id, "status": status.value, "error_code": fields["error_code"]}
+    return {"node_id": node_id, "status": NodeStatus.SUCCEEDED.value, "cost_usd": cost}
 
 
 @shared_task(name="worker.render_node", bind=True, queue="render")
 def render_node(self, project_id: str, node_id: str) -> dict:
     """Celery entrypoint. Resolves the node from shared state, renders it, reports back."""
     log.info("render project=%s node=%s", project_id, node_id)
-    try:
-        cost = asyncio.run(_attempt(project_id, node_id))
-    except ProviderError as exc:
-        # Permanent error, or transient retries exhausted: mark the node terminal so
-        # the daemon stops waiting on it (and can surface blocked dependents).
-        status = NodeStatus.DEAD_LETTERED if not exc.transient else NodeStatus.FAILED
-        asyncio.run(state.set_node_status(project_id, node_id, status, error=str(exc)))
-        log.error("node=%s -> %s: %s", node_id, status.value, exc)
-        return {"node_id": node_id, "status": status.value, "error": str(exc)}
-    return {"node_id": node_id, "status": NodeStatus.SUCCEEDED.value, "cost_usd": cost}
+    return asyncio.run(execute(project_id, node_id))

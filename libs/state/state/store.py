@@ -12,7 +12,8 @@ Key layout
 ``projects:approved``                set of approved ``project_id``s.
 ``node:{project_id}:{node_id}``      hash of *live, mutable* run state — ``status``,
                                      ``asset_url``, ``provider_url``,
-                                     ``actual_cost_usd``, ``attempts``, ``error``.
+                                     ``actual_cost_usd``, ``attempts``, ``error``,
+                                     ``error_code``, ``error_detail``.
 ``cost:{project_id}``                float owned by ``CostTracker`` (rate-limiter lib).
 ``project:{project_id}:phase``       ``executing|compositing|complete|blocked|paused``.
 ``project:{project_id}:final_url``   final MP4 URL.
@@ -37,8 +38,9 @@ import time
 from typing import Awaitable, AsyncIterator, Callable
 
 import redis.asyncio as redis
+from redis.exceptions import WatchError
 
-from schema import NodeStatus, ProductionPackage
+from schema import Asset, NodeStatus, ProductionPackage
 
 from state import pg
 from state.pg import UserExistsError  # re-exported for the auth layer
@@ -101,6 +103,9 @@ __all__ = [
     "UserExistsError",
     "set_node_status",
     "get_node",
+    "reset_node",
+    "update_asset_content",
+    "EditConflict",
     "increment_attempts",
     "get_dep_provider_urls",
     "get_project_phase",
@@ -400,6 +405,71 @@ async def set_node_status(
     await _mirror(
         lambda: pg.write_node_status(project_id, node_id, status, fields), "set_node_status"
     )
+
+
+class EditConflict(Exception):
+    """The node changed state while it was being edited."""
+
+
+async def reset_node(project_id: str, node_id: str) -> None:
+    """Send a failed node back to ``pending`` and clear its error, keeping the
+    cumulative ``attempts`` count (``set_node_status`` cannot clear fields)."""
+    key = f"node:{project_id}:{node_id}"
+    async with _redis().pipeline(transaction=True) as pipe:
+        pipe.hset(key, "status", NodeStatus.PENDING.value)
+        pipe.hdel(key, "error", "error_code", "error_detail")
+        await pipe.execute()
+    await _mirror(lambda: pg.reset_node(project_id, node_id), "reset_node")
+
+
+async def update_asset_content(
+    project_id: str,
+    node_id: str,
+    *,
+    allowed_statuses: set[str],
+    prompt: str | None = None,
+    text: str | None = None,
+    voice_id: str | None = None,
+) -> Asset:
+    """Edit one asset of an approved package in place, only while its live status is
+    in ``allowed_statuses``. Returns the committed (raw, not hydrated) asset.
+
+    WATCHes the spec and the node hash: sibling edits each rewrite the whole spec,
+    and the daemon may dispatch the node mid-edit, which must surface as a conflict."""
+    allowed = {getattr(s, "value", s) for s in allowed_statuses}
+    pkg_key = f"pkg:{project_id}"
+    node_key = f"node:{project_id}:{node_id}"
+    r = _redis()
+    async with r.pipeline(transaction=True) as pipe:
+        while True:
+            try:
+                await pipe.watch(pkg_key, node_key)
+                raw = await pipe.get(pkg_key)
+                if not raw:
+                    raise KeyError(project_id)
+                package = ProductionPackage.model_validate_json(raw)
+                asset = package.asset_by_id(node_id)
+                if asset is None:
+                    raise KeyError(node_id)
+                status = await pipe.hget(node_key, "status") or NodeStatus.PENDING.value
+                if status not in allowed:
+                    raise EditConflict(f"{node_id} is {status}")
+                if prompt is not None:
+                    asset.prompt = prompt
+                if text is not None:
+                    asset.text = text
+                if voice_id is not None:
+                    asset.spec["voice_id"] = voice_id
+                pipe.multi()
+                pipe.set(pkg_key, package.model_dump_json())
+                await pipe.execute()
+                break
+            except WatchError:
+                continue
+    # Mirror what actually committed, so racing mirrors converge on the latest spec.
+    committed = ProductionPackage.model_validate_json(await r.get(pkg_key))
+    await _mirror(lambda: pg.write_package(committed, None, None), "update_asset_content")
+    return committed.asset_by_id(node_id)
 
 
 async def get_node(project_id: str, node_id: str) -> dict[str, str]:

@@ -10,3 +10,4 @@ export { WarningBanner } from "./WarningBanner";
 export { EmptyState } from "./EmptyState";
 export { StatusBadge, PhaseBadge } from "./StatusBadge";
 export { Tabs } from "./Tabs";
+export { PromptBudget } from "./PromptBudget";

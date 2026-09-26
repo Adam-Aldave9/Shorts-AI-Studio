@@ -10,7 +10,12 @@ import { Panel } from "@/components/Panel";
 
 function destination(summary: PackageSummary): string {
   if (summary.phase === "complete") return `/result/${summary.project_id}`;
-  if (summary.phase === "executing" || summary.phase === "compositing") {
+  if (
+    summary.phase === "executing" ||
+    summary.phase === "compositing" ||
+    summary.phase === "blocked" ||
+    summary.phase === "paused"
+  ) {
     return `/status/${summary.project_id}`;
   }
   return `/checkpoint/${summary.project_id}`;

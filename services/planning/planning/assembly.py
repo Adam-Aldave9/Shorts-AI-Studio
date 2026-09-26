@@ -12,7 +12,9 @@ assembly *guarantees* every gate by construction —
     (refs have no deps, continuation points at the previous shot), so the DAG is
     acyclic with no dangling edges;
   * shot durations are rescaled to the target, so the duration gate is satisfied;
-  * the budget is set above the summed estimate, so the budget gate is satisfied.
+  * the budget is set above the summed estimate, so the budget gate is satisfied;
+  * every shot prompt is fitted to its provider's byte limit, so the prompt-size gate
+    is satisfied.
 
 The result is then re-validated terminally in the graph and again server-side on
 any checkpoint edit — but it should already be clean leaving here.
@@ -25,6 +27,7 @@ next to what was rendered.
 
 from __future__ import annotations
 
+import logging
 import uuid
 
 from schema import (
@@ -39,9 +42,14 @@ from schema import (
     ProductionPackage,
     TimelineEntry,
     World,
+    prompt_max_bytes,
+    utf8_len,
 )
 
 from planning.models import Screenplay, ShotList, ShotPrompts
+from planning.prompt_budget import fit_to_bytes, normalize_punctuation
+
+log = logging.getLogger(__name__)
 
 _DEFAULT_STYLE = "flat 2D animation, warm earth tones"
 _DEFAULT_VOICE = "elevenlabs_voice_default"
@@ -52,7 +60,7 @@ _SHOT_COST_MIN, _SHOT_COST_MAX = 0.05, 0.25
 _VOICEOVER_COST = 0.2  # Flash v2.5 draft model (~half the multilingual line)
 
 _IMAGE_HINT = "fal:flux-schnell"
-_VIDEO_HINT = "fal:pixverse-v6-i2v"
+VIDEO_HINT = "fal:pixverse-v6-i2v"
 # Flash v2.5 is the cheap/fast draft narration model for test/non-final runs.
 # Switch to "elevenlabs:multilingual-v3" (at the Checkpoint, or here) for a final pass.
 _VOICEOVER_HINT = "elevenlabs:flash-v2.5"
@@ -155,8 +163,13 @@ def assemble_package(
             deps.append(prev_id)
 
         sp = prompt_by_shot.get(shot.id)
-        prompt_text = (sp.prompt if sp else None) or shot.action
-        hint = (sp.provider_hint if sp else None) or _VIDEO_HINT
+        raw_prompt = normalize_punctuation((sp.prompt if sp else None) or shot.action)
+        prompt_text = fit_to_bytes(raw_prompt, prompt_max_bytes(VIDEO_HINT))
+        if prompt_text != raw_prompt:
+            log.warning(
+                "%s prompt trimmed from %d to %d bytes to fit %s",
+                node_id, utf8_len(raw_prompt), utf8_len(prompt_text), VIDEO_HINT,
+            )
         est = _clamp(sp.estimated_cost_usd if sp else 0.1, _SHOT_COST_MIN, _SHOT_COST_MAX)
 
         video_nodes.append(
@@ -164,7 +177,7 @@ def assemble_package(
                 node_id=node_id,
                 type=AssetType.VIDEO,
                 depends_on=deps,
-                provider_hint=hint,
+                provider_hint=VIDEO_HINT,
                 spec={"duration_s": dur, "aspect": brief.get("aspect_ratio") or "16:9"},
                 prompt=prompt_text,
                 reference_image_ids=refs,

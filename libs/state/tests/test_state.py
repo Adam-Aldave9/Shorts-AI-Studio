@@ -179,6 +179,112 @@ def test_checkpoint_edit_preserves_owner():
 
 
 # --------------------------------------------------------------------------
+# In-place recovery: reset a failed node, edit an approved asset
+# --------------------------------------------------------------------------
+def test_reset_node_clears_error_fields_and_keeps_attempts():
+    async def scenario():
+        await state.save_package(_pkg(), approved=True)
+        await state.increment_attempts("p_test", "shot_a")
+        await state.set_node_status(
+            "p_test", "shot_a", NodeStatus.DEAD_LETTERED,
+            error="flagged", error_code="content_policy", error_detail="fal fetch HTTP 422",
+        )
+        await state.reset_node("p_test", "shot_a")
+        node = await state.get_node("p_test", "shot_a")
+        assert node == {"status": "pending", "attempts": "1"}
+
+    _run(scenario)
+
+
+def test_update_asset_content_writes_the_raw_spec():
+    async def scenario():
+        await state.save_package(_pkg(), approved=True)
+        await state.set_node_status("p_test", "ref_a", NodeStatus.SUCCEEDED, asset_url="s3://r")
+        await state.set_node_status("p_test", "shot_a", NodeStatus.DEAD_LETTERED, error="x")
+
+        asset = await state.update_asset_content(
+            "p_test", "shot_a", allowed_statuses={"failed", "dead-lettered"}, prompt="new prompt"
+        )
+        assert asset.prompt == "new prompt"
+
+        raw = await state.store._redis().get("pkg:p_test")
+        spec = ProductionPackage.model_validate_json(raw)
+        assert spec.asset_by_id("shot_a").prompt == "new prompt"
+        # No live status leaked into the frozen spec.
+        assert spec.asset_by_id("shot_a").status is NodeStatus.PENDING
+        assert spec.asset_by_id("ref_a").status is NodeStatus.PENDING
+        assert spec.asset_by_id("ref_a").asset_url is None
+
+    _run(scenario)
+
+
+def test_update_asset_content_sets_voice_and_text():
+    async def scenario():
+        pkg = _pkg()
+        pkg.assets.append(Asset(node_id="vo", type=AssetType.VOICEOVER, text="hi", spec={"voice_id": "a"}))
+        await state.save_package(pkg, approved=True)
+        asset = await state.update_asset_content(
+            "p_test", "vo", allowed_statuses={"pending"}, text="hello", voice_id="b"
+        )
+        assert asset.text == "hello" and asset.spec["voice_id"] == "b"
+
+    _run(scenario)
+
+
+def test_update_asset_content_rejects_a_node_outside_allowed_statuses():
+    async def scenario():
+        await state.save_package(_pkg(), approved=True)
+        await state.set_node_status("p_test", "shot_a", NodeStatus.DISPATCHED)
+        with pytest.raises(state.EditConflict):
+            await state.update_asset_content(
+                "p_test", "shot_a", allowed_statuses={"pending"}, prompt="nope"
+            )
+        pkg = await state.get_package("p_test")
+        assert pkg.asset_by_id("shot_a").prompt == "y"
+
+    _run(scenario)
+
+
+def test_update_asset_content_retries_after_a_concurrent_write():
+    async def scenario():
+        await state.save_package(_pkg(), approved=True)
+        client = state.store._redis()
+        original_pipeline = client.pipeline
+        fired = False
+
+        def pipeline(*args, **kwargs):
+            pipe = original_pipeline(*args, **kwargs)
+            real_hget = pipe.hget
+
+            async def hget(*hargs):
+                nonlocal fired
+                if not fired:
+                    fired = True
+                    sibling = _pkg()
+                    sibling.asset_by_id("ref_a").prompt = "sibling edit"
+                    await client.set("pkg:p_test", sibling.model_dump_json())
+                return await real_hget(*hargs)
+
+            pipe.hget = hget
+            return pipe
+
+        client.pipeline = pipeline
+        try:
+            await state.update_asset_content(
+                "p_test", "shot_a", allowed_statuses={"pending"}, prompt="mine"
+            )
+        finally:
+            client.pipeline = original_pipeline
+
+        assert fired
+        spec = ProductionPackage.model_validate_json(await client.get("pkg:p_test"))
+        assert spec.asset_by_id("shot_a").prompt == "mine"
+        assert spec.asset_by_id("ref_a").prompt == "sibling edit"
+
+    _run(scenario)
+
+
+# --------------------------------------------------------------------------
 # Users (accounts / auth) — Redis-only branch
 # --------------------------------------------------------------------------
 def test_create_and_fetch_user():

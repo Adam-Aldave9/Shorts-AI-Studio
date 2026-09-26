@@ -84,8 +84,9 @@ class ShotPrompt(BaseModel):
 
     shot_id: str = Field(description="The shot this prompt is for (matches Shot.id).")
     prompt: str = Field(
-        description="Vivid image-to-video prompt with the canonical descriptions of "
-        "every referenced entity baked in."
+        description="Image-to-video prompt within the stated byte budget: character "
+        "descriptions woven in verbatim, setting in one short clause, the style sentence "
+        "once at the end."
     )
     provider_hint: str = Field(
         default="fal:pixverse-v6-i2v",
@@ -96,3 +97,10 @@ class ShotPrompt(BaseModel):
 
 class ShotPrompts(BaseModel):
     prompts: list[ShotPrompt] = Field(default_factory=list)
+
+
+class PromptRevision(BaseModel):
+    """A proposed rewrite of one rejected prompt, for the user to review."""
+
+    prompt: str = Field(description="The full rewritten prompt.")
+    notes: str = Field(description="One sentence on what changed and why.")

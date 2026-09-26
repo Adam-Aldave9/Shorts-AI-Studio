@@ -9,6 +9,8 @@ import asyncio
 import random
 from typing import Any
 
+from schema import mock_failure_code
+
 from adapters.base import Adapter, JobHandle, JobResult, ProviderError
 
 # Mean latency (seconds) and unit price per model family, used to make mock runs
@@ -39,6 +41,13 @@ class MockAdapter:
         return kind
 
     async def submit(self, model: str, payload: dict[str, Any]) -> JobHandle:
+        code = mock_failure_code(payload.get("prompt") or payload.get("text"))
+        if code is not None:
+            raise ProviderError(
+                f"Simulated {code} failure (MOCK)",
+                code=code,
+                detail="mock adapter: [mock-fail] token in the prompt",
+            )
         kind = self._kind(payload)
         return JobHandle(provider=self.name, job_id=f"mock_{random.randint(0, 1 << 30)}",
                          meta={"kind": kind, "model": model})

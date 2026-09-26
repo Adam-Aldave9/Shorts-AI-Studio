@@ -7,7 +7,9 @@ import { useBeforeUnload, useBlocker, useNavigate } from "react-router-dom";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { approvePackage, isConflict, updatePackage, type ProductionPackage } from "@/api/client";
 import { usePackageDraft } from "@/hooks/usePackageDraft";
+import { usePromptLimits } from "@/hooks/usePromptLimits";
 import { videoShots } from "@/lib/package";
+import { utf8Bytes } from "@/lib/promptBudget";
 import { Button, ErrorBanner, SuccessBanner, Tabs, WarningBanner } from "@/components/ui";
 import { CheckpointHeader } from "./CheckpointHeader";
 import { StoryPanel } from "./StoryPanel";
@@ -20,16 +22,19 @@ export default function CheckpointEditor({
   pkg,
   locked,
   approved,
+  phase,
 }: {
   projectId: string;
   pkg: ProductionPackage;
   /** Approved, or the status not yet known. */
   locked: boolean;
   approved: boolean;
+  phase: string | null;
 }) {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const draftApi = usePackageDraft(projectId, pkg);
+  const limitFor = usePromptLimits();
 
   const [tab, setTab] = useState<CheckpointTab>("story");
   const [jsonText, setJsonText] = useState(() => JSON.stringify(pkg, null, 2));
@@ -73,6 +78,17 @@ export default function CheckpointEditor({
   const savedText = useMemo(() => JSON.stringify(draftApi.saved, null, 2), [draftApi.saved]);
   const jsonDirty = tab === "json" && jsonText !== savedText;
   const dirty = draftApi.dirty || jsonDirty;
+
+  const overLimit = useMemo(
+    () =>
+      (draftApi.merged.assets ?? [])
+        .filter((asset) => {
+          const limit = limitFor(asset.provider_hint);
+          return limit !== undefined && utf8Bytes(asset.prompt ?? "") > limit;
+        })
+        .map((asset) => asset.node_id),
+    [draftApi.merged, limitFor],
+  );
 
   function parseJson(): ProductionPackage | null {
     try {
@@ -171,6 +187,7 @@ export default function CheckpointEditor({
           dirty={dirty}
           saving={saveMutation.isPending}
           approving={approveMutation.isPending}
+          approveBlocked={overLimit.length > 0}
           onSave={onSave}
           onApprove={onApprove}
           onRevert={draftApi.resetAll}
@@ -189,7 +206,19 @@ export default function CheckpointEditor({
       </div>
 
       <div className="mt-4 space-y-2 empty:hidden">
-        {approved && (
+        {approved && phase === "blocked" && (
+          <WarningBanner>
+            This run needs your input - fix the failed shots on the{" "}
+            <button
+              className="underline hover:text-warning/80"
+              onClick={() => navigate(`/status/${projectId}`)}
+            >
+              live status page
+            </button>
+            .
+          </WarningBanner>
+        )}
+        {approved && phase !== "blocked" && (
           <WarningBanner>
             Approved and running — view only.{" "}
             <button
@@ -199,6 +228,13 @@ export default function CheckpointEditor({
               Open the live status
             </button>
             .
+          </WarningBanner>
+        )}
+        {!approved && overLimit.length > 0 && (
+          <WarningBanner>
+            {overLimit.join(", ")} {overLimit.length === 1 ? "is" : "are"} over the provider&apos;s
+            prompt byte limit — save will fail validation, and the run can&apos;t be approved until
+            {overLimit.length === 1 ? " it is" : " they are"} shortened.
           </WarningBanner>
         )}
         {saveMutation.isError && (

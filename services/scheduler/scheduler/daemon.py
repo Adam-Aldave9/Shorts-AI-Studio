@@ -77,13 +77,21 @@ async def _advance(package: ProductionPackage) -> None:
         phase = PHASE_EXECUTING
         await set_project_phase(project_id, PHASE_EXECUTING)
 
+    dag = Dag(package)
+
+    # A retry resets failed nodes to pending with succeeded deps, so a blocked run
+    # with ready work has been recovered. The daemon is the only writer of this
+    # transition, which also heals a tick that wrote ``blocked`` from a stale snapshot.
+    if phase == PHASE_BLOCKED and dag.ready_nodes():
+        phase = PHASE_EXECUTING
+        await set_project_phase(project_id, PHASE_EXECUTING)
+        log.info("project=%s recovered: blocked -> executing", project_id)
+
     # Only an actively-executing project is the daemon's to drive: ``compositing``
     # waits on the compositor; ``complete``/``paused``/``blocked`` wait on a human
     # (spec §10.2). Returning here is also what makes the handoffs below fire once.
     if phase != PHASE_EXECUTING:
         return
-
-    dag = Dag(package)
 
     # Completion: hand the finished timeline to the compositor exactly once. The
     # executing -> compositing transition is the guard that stops COMPOSITE_TASK from
@@ -115,8 +123,14 @@ async def _advance(package: ProductionPackage) -> None:
             log.warning("project=%s paused: %s", project_id, exc)
             return
         log.info("enqueue node=%s project=%s", node_id, project_id)
-        celery_app.send_task(RENDER_TASK, args=[project_id, node_id], queue=WORKER_QUEUE)
+        # Mark before sending: a worker that fails fast must never have its terminal
+        # status overwritten by a late ``dispatched``.
         await set_node_status(project_id, node_id, NodeStatus.DISPATCHED)
+        try:
+            celery_app.send_task(RENDER_TASK, args=[project_id, node_id], queue=WORKER_QUEUE)
+        except Exception:
+            await set_node_status(project_id, node_id, NodeStatus.PENDING)
+            raise
 
 
 async def run_daemon(stop: asyncio.Event) -> None:

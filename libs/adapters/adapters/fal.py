@@ -15,8 +15,10 @@ import os
 from typing import Any
 
 import httpx
+from schema import ErrorCode
 
 from adapters.base import JobHandle, JobResult, ProviderError
+from adapters.errors import http_error
 
 FAL_QUEUE_BASE = "https://queue.fal.run"
 
@@ -39,6 +41,55 @@ _PRICES = {
 
 _VIDEO_MODELS = {"pixverse-v6-i2v"}
 _IMAGE_MODELS = {"flux-schnell", "flux-pro"}
+
+# fal error ``type`` -> ErrorCode. ``sequence_too_long`` on a prompt field and any
+# ``runner_*`` type are special-cased in ``adapters.errors``.
+_FAL_TYPE_CODES: dict[str, ErrorCode] = {
+    "content_policy_violation": ErrorCode.CONTENT_POLICY,
+    **dict.fromkeys(
+        [
+            "file_download_error",
+            "image_load_error",
+            "image_too_small",
+            "image_too_large",
+            "unsupported_image_format",
+            "file_too_large",
+            "face_detection_error",
+        ],
+        ErrorCode.INPUT_IMAGE,
+    ),
+    **dict.fromkeys(
+        [
+            "value_error",
+            "input_value_error",
+            "missing",
+            "sequence_too_short",
+            "sequence_too_long",
+            "one_of",
+            "greater_than",
+            "greater_than_equal",
+            "less_than",
+            "less_than_equal",
+            "multiple_of",
+            "feature_not_supported",
+            "no_media_generated",
+            "bad_request",
+        ],
+        ErrorCode.INVALID_INPUT,
+    ),
+    **dict.fromkeys(
+        [
+            "generation_timeout",
+            "request_timeout",
+            "startup_timeout",
+            "internal_server_error",
+            "internal_error",
+            "downstream_service_error",
+            "downstream_service_unavailable",
+        ],
+        ErrorCode.PROVIDER_UNAVAILABLE,
+    ),
+}
 
 
 class FalAdapter:
@@ -66,29 +117,39 @@ class FalAdapter:
             image_url = payload.get("image_url")
             if not image_url:
                 raise ProviderError(
-                    f"i2v model {model!r} requires a reachable image_url", transient=False
+                    f"i2v model {model!r} requires a reachable image_url",
+                    code=ErrorCode.INPUT_IMAGE,
+                    transient=False,
                 )
             body = {"prompt": payload.get("prompt") or "", "image_url": image_url}
             if payload.get("duration"):
                 # PixVerse V6 takes an integer duration in seconds (1-15).
                 body["duration"] = int(round(float(payload["duration"])))
             return body
-        raise ProviderError(f"unknown fal model {model!r}", transient=False)
+        raise ProviderError(
+            f"unknown fal model {model!r}", code=ErrorCode.INVALID_INPUT, transient=False
+        )
 
     # -- adapter verbs ------------------------------------------------------
     async def submit(self, model: str, payload: dict[str, Any]) -> JobHandle:
         if not self._api_key:
-            raise ProviderError("FAL_API_KEY is not set", transient=False)
+            raise ProviderError("FAL_API_KEY is not set", code=ErrorCode.AUTH, transient=False)
         slug = _MODEL_SLUGS.get(model)
         if slug is None:
-            raise ProviderError(f"no fal slug mapped for model {model!r}", transient=False)
+            raise ProviderError(
+                f"no fal slug mapped for model {model!r}",
+                code=ErrorCode.INVALID_INPUT,
+                transient=False,
+            )
 
         body = self._build_input(model, payload)
         try:
             resp = await self._client.post(f"/{slug}", json=body)
-        except httpx.RequestError as exc:  # network/timeout -> retryable
-            raise ProviderError(f"fal submit network error: {exc}", transient=True) from exc
-        self._raise_for_status(resp)
+        except httpx.RequestError as exc:
+            raise ProviderError(
+                f"fal submit network error: {exc}", code=ErrorCode.PROVIDER_UNAVAILABLE
+            ) from exc
+        self._raise_for_status(resp, "submit")
 
         data = resp.json()
         return JobHandle(
@@ -106,42 +167,59 @@ class FalAdapter:
         try:
             resp = await self._client.get(handle.meta["status_url"])
         except httpx.RequestError as exc:
-            raise ProviderError(f"fal poll network error: {exc}", transient=True) from exc
-        self._raise_for_status(resp)
+            raise ProviderError(
+                f"fal poll network error: {exc}", code=ErrorCode.PROVIDER_UNAVAILABLE
+            ) from exc
+        self._raise_for_status(resp, "poll")
 
         status = resp.json().get("status")
         if status in {"IN_QUEUE", "IN_PROGRESS"}:
             return JobResult(asset_url="", cost_usd=0.0, done=False)
         if status == "COMPLETED":
             return await self.fetch_result(handle)
-        raise ProviderError(f"fal job in unexpected state {status!r}", transient=False)
+        raise ProviderError(
+            f"fal job in unexpected state {status!r}", code=ErrorCode.UNKNOWN, transient=False
+        )
 
     async def fetch_result(self, handle: JobHandle) -> JobResult:
         try:
             resp = await self._client.get(handle.meta["response_url"])
         except httpx.RequestError as exc:
-            raise ProviderError(f"fal fetch network error: {exc}", transient=True) from exc
-        self._raise_for_status(resp)
+            raise ProviderError(
+                f"fal fetch network error: {exc}", code=ErrorCode.PROVIDER_UNAVAILABLE
+            ) from exc
+        self._raise_for_status(resp, "fetch")
 
-        data = resp.json()
-        if handle.meta.get("kind") == "video":
+        return self._parse_result(resp.json(), handle.meta)
+
+    @staticmethod
+    def _parse_result(data: dict[str, Any], meta: dict[str, Any]) -> JobResult:
+        cost = _PRICES.get(meta.get("model", ""), 0.0)
+        if meta.get("kind") == "video":
             url = (data.get("video") or {}).get("url")
         else:
+            # Flux returns a safety-flagged image as a blacked-out success, not an error.
+            if any(data.get("has_nsfw_concepts") or []):
+                raise ProviderError(
+                    "The image was flagged by the provider's safety checker and came back "
+                    "blacked out.",
+                    code=ErrorCode.CONTENT_POLICY,
+                    transient=False,
+                    cost_usd=cost,
+                )
             images = data.get("images") or []
             url = images[0].get("url") if images else None
         if not url:
-            raise ProviderError(f"fal result missing asset url: {data!r}", transient=False)
-
-        cost = _PRICES.get(handle.meta.get("model", ""), 0.0)
+            raise ProviderError(
+                "The provider's result had no asset URL.",
+                code=ErrorCode.UNKNOWN,
+                transient=False,
+                detail=f"fal fetch result: {str(data)[:500]}",
+            )
         return JobResult(asset_url=url, cost_usd=cost, done=True)
 
     # -- helpers ------------------------------------------------------------
     @staticmethod
-    def _raise_for_status(resp: httpx.Response) -> None:
-        if resp.is_success:
-            return
-        # 5xx + 429 are retryable; other 4xx (bad request/auth) are permanent.
-        transient = resp.status_code >= 500 or resp.status_code == 429
-        raise ProviderError(
-            f"fal HTTP {resp.status_code}: {resp.text[:500]}", transient=transient
-        )
+    def _raise_for_status(resp: httpx.Response, verb: str) -> None:
+        if not resp.is_success:
+            raise http_error("fal", verb, resp, _FAL_TYPE_CODES)

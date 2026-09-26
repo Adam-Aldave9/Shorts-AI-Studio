@@ -21,7 +21,7 @@ from validator import validate_package
 import state
 from planning import main
 from planning.agents import breakdown, prompts, script, world
-from planning.assembly import assemble_package
+from planning.assembly import VIDEO_HINT, assemble_package
 from planning.graph import STAGE_SEQUENCE, _load_mock_package, run_planning
 from planning.llm import MODEL_WORLD
 from planning.models import Screenplay, ShotList, ShotPrompts
@@ -245,6 +245,61 @@ def test_prompts_run_on_empty_shot_list_makes_no_calls():
     assert out.prompts == []
 
 
+def test_prompts_build_prompt_carries_budget_and_splits_entities():
+    system, human = (m[1] for m in prompts.build_prompt(_brief(), _shot_list(), _world()))
+    assert "2048 UTF-8 bytes" in system
+    assert "Budget: each prompt at most 2048 UTF-8 bytes" in human
+    characters, locations = human.split("Locations (")
+    assert "A large golden jaguar." in characters and "A wide brown river." not in characters
+    assert "A wide brown river." in locations and "one short clause" in locations
+
+
+def _sized_call(calls: list[list[str]], sizes: dict[str, int], tightened: int = 100):
+    """Answers the first request for a shot with a prompt of ``sizes[shot_id]`` bytes,
+    and any repeat request (the tighten pass) with ``tightened`` bytes."""
+
+    def fake_call(*, model, messages, schema, **kw):
+        shot_ids = [line.split("]")[0].strip(" [") for line in messages[1][1].splitlines()
+                    if line.startswith("  [")]
+        repeat = bool(calls) and "over the" in messages[1][1]
+        calls.append(shot_ids)
+        return ShotPrompts(prompts=[
+            {"shot_id": sid, "prompt": "a" * (tightened if repeat else sizes.get(sid, 50))}
+            for sid in shot_ids
+        ])
+
+    return fake_call
+
+
+def test_prompts_tighten_pass_rewrites_only_over_limit_prompts():
+    calls: list[list[str]] = []
+    out = prompts.run(_brief(), _shot_list(), _world(),
+                      call=_sized_call(calls, {"shot_002": 2100}))
+    assert calls == [["shot_001", "shot_002", "shot_003"], ["shot_002"]]
+    assert [len(p.prompt) for p in out.prompts] == [50, 100, 50]
+
+
+def test_prompts_tighten_pass_is_skipped_when_everything_fits():
+    calls: list[list[str]] = []
+    prompts.run(_brief(), _shot_list(), _world(), call=_sized_call(calls, {}))
+    assert len(calls) == 1
+
+
+def test_prompts_tighten_failure_keeps_the_originals():
+    calls = 0
+
+    def flaky_call(*, model, messages, schema, **kw):
+        nonlocal calls
+        calls += 1
+        if calls > 1:
+            raise RuntimeError("tighten boom")
+        return ShotPrompts(prompts=[{"shot_id": "shot_001", "prompt": "a" * 3000}])
+
+    out = prompts.run(_brief(), ShotList(shots=_shot_list().shots[:1]), _world(), call=flaky_call)
+    assert calls == 2
+    assert len(out.prompts[0].prompt) == 3000
+
+
 def test_agent_run_uses_injected_call_no_network():
     captured = {}
 
@@ -324,6 +379,23 @@ def test_assemble_handles_unknown_entity_tags():
     pkg = assemble_package(_brief(), _world(), _screenplay(), shots, ShotPrompts(prompts=[]))
     assert validate_package(pkg).ok
     assert pkg.asset_by_id("shot_001").reference_image_ids  # fell back to a real ref
+
+
+def test_assemble_forces_the_video_hint_and_fits_the_byte_limit():
+    long_prompt = "Wide shot of the river. " + "The water churns and foams. " * 120 + "Flat 2D."
+    shot_prompts = ShotPrompts(prompts=[
+        {"shot_id": "shot_001", "prompt": long_prompt, "provider_hint": "fal:pixverse-v5-i2v"},
+        {"shot_id": "shot_002", "prompt": "A jaguar drinks " + chr(0x2014) + " calmly."},
+    ])
+    pkg = assemble_package(_brief(), _world(), _screenplay(), _shot_list(), shot_prompts)
+    assert validate_package(pkg).ok
+
+    videos = [a for a in pkg.assets if a.type is AssetType.VIDEO]
+    assert {v.provider_hint for v in videos} == {VIDEO_HINT}
+    shot1 = pkg.asset_by_id("shot_001").prompt
+    assert len(shot1.encode("utf-8")) <= 2048
+    assert shot1.startswith("Wide shot of the river.") and shot1.endswith("Flat 2D.")
+    assert pkg.asset_by_id("shot_002").prompt == "A jaguar drinks - calmly."
 
 
 # --------------------------------------------------------------------------

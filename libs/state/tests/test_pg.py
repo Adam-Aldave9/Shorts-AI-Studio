@@ -131,6 +131,7 @@ def test_node_params_maps_status_cost_and_drops_asset_url():
         "actual_cost_usd": 0.04,
         "provider_url": "https://fal/x",
         "error": None,
+        "error_code": None,
     }
     # asset_url is a Redis field, not a node_history column
     assert "asset_url" not in params
@@ -258,3 +259,9 @@ def test_save_package_write_through_and_redis_miss_fallback(pg_url):
         await _cleanup(pg_url, project_id)
 
     _run_async(scenario())
+
+
+def test_node_params_carries_error_code():
+    params = pg.node_params("p", "shot_a", "dead-lettered", {"error": "x", "error_code": "content_policy"})
+    assert params["error_code"] == "content_policy"
+    assert "error_detail" not in params

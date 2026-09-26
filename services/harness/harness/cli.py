@@ -431,7 +431,7 @@ def _run_trial(
     authenticated ``client`` (session cookie jar) with the CSRF token on writes.
     """
     import httpx
-    from state import PHASE_COMPOSITING
+    from state import PHASE_BLOCKED, PHASE_COMPOSITING, PHASE_PAUSED
 
     pkg_dict = json.loads(package.read_text())
     project_id = f"p_bench_w{n}_t{trial}"
@@ -471,6 +471,10 @@ def _run_trial(
             if frame.get("complete"):
                 total_t = time.monotonic() - t0
                 break
+            # The stream stays open on these so the UI can recover the run; a bench
+            # trial just ends there.
+            if last_phase in (PHASE_BLOCKED, PHASE_PAUSED):
+                break
             if time.monotonic() - t0 > timeout_s:
                 typer.secho(
                     f"    trial w={n} t={trial} exceeded {timeout_s:.0f}s guard "
@@ -480,7 +484,7 @@ def _run_trial(
                 )
                 break
 
-    if total_t is None:  # stream closed on a non-complete terminal phase, or guard hit
+    if total_t is None:  # blocked/paused, or guard hit
         total_t = time.monotonic() - t0
         if last_phase != "complete":
             typer.secho(

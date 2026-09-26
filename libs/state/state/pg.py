@@ -106,6 +106,7 @@ INIT_STATEMENTS: list[str] = [
     # owner (unowned).
     "ALTER TABLE packages ADD COLUMN IF NOT EXISTS owner_id TEXT",
     "CREATE INDEX IF NOT EXISTS packages_owner_idx ON packages (owner_id)",
+    "ALTER TABLE node_history ADD COLUMN IF NOT EXISTS error_code TEXT",
 ]
 
 _UPSERT_PACKAGE = """
@@ -126,14 +127,23 @@ ON CONFLICT (project_id) DO UPDATE SET
 # COALESCE on update so a later partial write (e.g. status only) does not clobber
 # a provider_url / cost recorded by an earlier one.
 _UPSERT_NODE = """
-INSERT INTO node_history (project_id, node_id, status, actual_cost_usd, provider_url, error, updated_at)
-VALUES (%(project_id)s, %(node_id)s, %(status)s, %(actual_cost_usd)s, %(provider_url)s, %(error)s, now())
+INSERT INTO node_history
+    (project_id, node_id, status, actual_cost_usd, provider_url, error, error_code, updated_at)
+VALUES (%(project_id)s, %(node_id)s, %(status)s, %(actual_cost_usd)s, %(provider_url)s,
+        %(error)s, %(error_code)s, now())
 ON CONFLICT (project_id, node_id) DO UPDATE SET
     status          = COALESCE(EXCLUDED.status, node_history.status),
     actual_cost_usd = COALESCE(EXCLUDED.actual_cost_usd, node_history.actual_cost_usd),
     provider_url    = COALESCE(EXCLUDED.provider_url, node_history.provider_url),
     error           = COALESCE(EXCLUDED.error, node_history.error),
+    error_code      = COALESCE(EXCLUDED.error_code, node_history.error_code),
     updated_at      = now()
+"""
+
+# The upsert COALESCEs, so it can never clear a field; a retry resets explicitly.
+_RESET_NODE = """
+UPDATE node_history SET status = 'pending', error = NULL, error_code = NULL, updated_at = now()
+WHERE project_id = %(project_id)s AND node_id = %(node_id)s
 """
 
 _UPSERT_ATTEMPTS = """
@@ -233,6 +243,7 @@ def node_params(project_id: str, node_id: str, status: Any, fields: dict[str, An
         "actual_cost_usd": _as_float(fields.get("actual_cost_usd")),
         "provider_url": fields.get("provider_url"),
         "error": fields.get("error"),
+        "error_code": fields.get("error_code"),
     }
 
 
@@ -285,6 +296,10 @@ async def mark_approved(project_id: str) -> None:
 
 async def write_node_status(project_id: str, node_id: str, status: Any, fields: dict[str, Any]) -> None:
     await _execute(_UPSERT_NODE, node_params(project_id, node_id, status, fields))
+
+
+async def reset_node(project_id: str, node_id: str) -> None:
+    await _execute(_RESET_NODE, {"project_id": project_id, "node_id": node_id})
 
 
 async def write_attempts(project_id: str, node_id: str, attempts: int) -> None:

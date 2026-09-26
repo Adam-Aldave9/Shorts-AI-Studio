@@ -17,7 +17,7 @@ from schema import (
     ProductionPackage,
 )
 
-from validator import validate_package
+from validator import content_errors, validate_package
 
 
 def _valid_pkg() -> ProductionPackage:
@@ -156,3 +156,34 @@ def test_narrative_is_not_gated():
     )
     report = validate_package(pkg)
     assert report.ok
+
+
+def _with_shot_prompt(prompt: str | None, hint: str | None = "fal:pixverse-v6-i2v") -> ProductionPackage:
+    pkg = _valid_pkg()
+    shot = pkg.asset_by_id("shot_a")
+    shot.prompt = prompt
+    shot.provider_hint = hint
+    return pkg
+
+
+def test_prompt_at_byte_limit_passes():
+    assert validate_package(_with_shot_prompt("a" * 2048)).ok
+
+
+def test_prompt_over_byte_limit_fails():
+    report = validate_package(_with_shot_prompt("a" * 2049))
+    assert len(report.errors) == 1
+    assert "shot_a prompt is 2049 bytes" in report.errors[0]
+
+
+def test_multibyte_prompt_counts_bytes():
+    prompt = "\u2014" * 683
+    assert len(prompt) == 683
+    report = validate_package(_with_shot_prompt(prompt))
+    assert any("2049 bytes" in e for e in report.errors)
+
+
+def test_unknown_hint_and_promptless_asset_pass():
+    assert validate_package(_with_shot_prompt("a" * 5000, hint="fal:other-model")).ok
+    assert validate_package(_with_shot_prompt(None)).ok
+    assert content_errors(_with_shot_prompt(None).asset_by_id("shot_a")) == []

@@ -17,6 +17,10 @@ export type Asset = SchedulerComponents["schemas"]["Asset"];
 export type TimelineEntry = SchedulerComponents["schemas"]["TimelineEntry"];
 export type NarrativeScene = SchedulerComponents["schemas"]["NarrativeScene"];
 export type NarrativeShot = SchedulerComponents["schemas"]["NarrativeShot"];
+export type ErrorCode = PlanningComponents["schemas"]["ErrorCode"];
+export type NodeEdit = SchedulerComponents["schemas"]["NodeEdit"];
+type ProviderLimits = SchedulerComponents["schemas"]["ProviderLimits"];
+type PromptSuggestion = PlanningComponents["schemas"]["PromptSuggestion"];
 
 /** A non-2xx response. For the scheduler's 422, `detail` is the validator's error list,
  *  rendered inline at the checkpoint. */
@@ -168,6 +172,38 @@ export function getPackageStatus(projectId: string): Promise<PackageStatus> {
   return request<PackageStatus>(`${SCHEDULER_URL}/packages/${projectId}/status`);
 }
 
+/** Save an in-place fix to one failed (or still-waiting) node of an approved run. */
+export function patchNode(projectId: string, nodeId: string, edit: NodeEdit): Promise<Asset> {
+  return request<Asset>(`${SCHEDULER_URL}/packages/${projectId}/nodes/${nodeId}`, {
+    method: "PATCH",
+    body: JSON.stringify(edit),
+  });
+}
+
+/** Re-render failed nodes (all of them when `nodeIds` is omitted); succeeded ones are kept. */
+export function retryNodes(projectId: string, nodeIds?: string[]): Promise<PackageStatus> {
+  return request<PackageStatus>(`${SCHEDULER_URL}/packages/${projectId}/retry`, {
+    method: "POST",
+    body: JSON.stringify({ node_ids: nodeIds ?? null }),
+  });
+}
+
+export function getLimits(): Promise<ProviderLimits> {
+  return request<ProviderLimits>(`${SCHEDULER_URL}/limits`);
+}
+
+/** Ask the planning tier for a rewrite of a failed prompt. Never saves. */
+export function suggestFix(
+  projectId: string,
+  nodeId: string,
+  prompt?: string,
+): Promise<PromptSuggestion> {
+  return request<PromptSuggestion>(
+    `${PLANNING_URL}/packages/${projectId}/nodes/${nodeId}/suggest`,
+    { method: "POST", body: JSON.stringify({ prompt: prompt ?? null }) },
+  );
+}
+
 // SSE frame bodies can't be described by OpenAPI, so the shapes below are hand-typed
 // against the backend emitters and must be kept in sync with them.
 
@@ -193,6 +229,10 @@ export interface SseNode {
   status: string;
   attempts: number;
   error: string | null;
+  error_code: ErrorCode | null;
+  error_detail: string | null;
+  /** For a pending node: the failed nodes upstream of it. */
+  blocked_by: string[];
 }
 
 /** The `status` frame from `GET /packages/{id}/events` (scheduler `_status_event`). */
