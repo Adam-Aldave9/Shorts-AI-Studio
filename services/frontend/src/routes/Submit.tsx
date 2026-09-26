@@ -5,11 +5,9 @@ import { useState, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { useMutation } from "@tanstack/react-query";
 import { submitBrief, type Brief } from "@/api/client";
+import { DURATIONS, STYLES } from "@/lib/briefOptions";
 import { VOICES } from "@/lib/voices";
 import { Button, Card, ErrorBanner, Field, controlClass } from "@/components/ui";
-
-const STYLES = ["cinematic", "documentary", "animated", "noir", "nature", "dreamlike"];
-const DURATIONS = [30, 60, 90, 120];
 
 export default function Submit() {
   const navigate = useNavigate();

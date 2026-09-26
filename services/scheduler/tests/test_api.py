@@ -147,10 +147,12 @@ def test_status_event_carries_live_node_phase_cost_and_final_url():
         assert nodes["ref_a"] == {
             "status": "succeeded", "attempts": 1, "error": None,
             "error_code": None, "error_detail": None, "blocked_by": [],
+            "reused_from": None,
         }
         assert nodes["shot_a"] == {
             "status": "failed", "attempts": 2, "error": "boom",
             "error_code": None, "error_detail": None, "blocked_by": [],
+            "reused_from": None,
         }
 
     _run(scenario)
@@ -216,7 +218,9 @@ def test_update_package_after_approval_is_409():
 def test_approve_twice_is_409():
     async def scenario(_client):
         await main.create_package(_valid_pkg(), user_id="user_a")
-        assert await main.approve("p1") == {"status": "approved"}
+        result = await main.approve("p1")
+        assert result.status == "approved"
+        assert result.reused == 0
 
         with pytest.raises(main.HTTPException) as exc:
             await main.approve("p1")

@@ -6,6 +6,7 @@ import type { PackageDraftApi } from "@/hooks/usePackageDraft";
 import { usePromptLimits } from "@/hooks/usePromptLimits";
 import { referenceImages, videoShots } from "@/lib/package";
 import { utf8Bytes } from "@/lib/promptBudget";
+import { cascadeOf, isReused, type NodeReuse } from "@/lib/reuse";
 import { EmptyState, Tabs, controlClass } from "@/components/ui";
 import { ShotRail } from "./ShotRail";
 import { ShotDetail } from "./ShotDetail";
@@ -35,9 +36,13 @@ export function ShotWorkbench({
   isNodeDirty,
   resetNode,
   readOnly,
+  reuse,
+  onToggleRerender,
 }: Pick<PackageDraftApi, "nodeValue" | "setNode" | "isNodeDirty" | "resetNode"> & {
   pkg: ProductionPackage;
   readOnly: boolean;
+  reuse: Map<string, NodeReuse>;
+  onToggleRerender: (nodeId: string) => void;
 }) {
   const [kind, setKind] = useState<AssetKind>("video");
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
@@ -126,6 +131,7 @@ export function ShotWorkbench({
             valueOf={nodeValue}
             isEdited={isNodeDirty}
             isOverLimit={isOverLimit}
+            isReused={(nodeId) => isReused(reuse.get(nodeId))}
             onSelect={onSelect}
             onMove={onMove}
           />
@@ -142,6 +148,11 @@ export function ShotWorkbench({
               limit={limitFor(active.provider_hint)}
               onChange={(value) => setNode(active.node_id, value)}
               onReset={() => resetNode(active.node_id)}
+              reuse={reuse.get(active.node_id) ?? null}
+              cascade={
+                active.type === "image" ? cascadeOf(pkg.assets ?? [], active.node_id, reuse) : []
+              }
+              onToggleRerender={() => onToggleRerender(active.node_id)}
               onMove={onMove}
               onOpenNode={onOpenNode}
             />

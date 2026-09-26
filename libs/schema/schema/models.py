@@ -75,6 +75,8 @@ class Asset(BaseModel):
     actual_cost_usd: float | None = None
     status: NodeStatus = NodeStatus.PENDING
     asset_url: str | None = None
+    # Opaque; hashed into the render fingerprint but sent to no provider. A new value forces a fresh render.
+    take: str | None = None
 
 
 class TimelineEntry(BaseModel):
@@ -101,6 +103,8 @@ class NarrativeShot(BaseModel):
     scene_id: str
     shot_type: str = ""
     action: str = ""
+    location_id: str = ""
+    subject_ids: list[str] = Field(default_factory=list)
 
 
 class Narrative(BaseModel):
@@ -116,10 +120,21 @@ class Narrative(BaseModel):
     shots: list[NarrativeShot] = Field(default_factory=list)
 
 
+class Lineage(BaseModel):
+    """Where a version sits in its film's history. Display and reuse metadata only."""
+
+    film_id: str
+    version: int = 1
+    parent_project_id: str | None = None
+    note: str = ""
+    from_stage: str | None = None
+    changes: list[str] = Field(default_factory=list)
+
+
 class ProductionPackage(BaseModel):
     """The replayable artifact that is the seam between the two tiers (spec §5)."""
 
-    schema_version: str = "1.1"
+    schema_version: str = "1.2"
     project_id: str
     created_at: datetime = Field(
         default_factory=lambda: datetime.now(timezone.utc)
@@ -130,6 +145,8 @@ class ProductionPackage(BaseModel):
     timeline: list[TimelineEntry] = Field(default_factory=list)
     # None on every package written before schema 1.1.
     narrative: Narrative | None = None
+    # None on every package written before schema 1.2.
+    lineage: Lineage | None = None
 
     def asset_by_id(self, node_id: str) -> Asset | None:
         return next((a for a in self.assets if a.node_id == node_id), None)

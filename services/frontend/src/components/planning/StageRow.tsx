@@ -3,7 +3,7 @@ import { formatDuration } from "@/lib/format";
 import { cn, IndeterminateBar, ProgressBar } from "@/components/ui";
 import { detailFraction, renderDetail, type StageSpec } from "./stages";
 
-export type StageState = "done" | "active" | "pending";
+export type StageState = "done" | "active" | "pending" | "skipped";
 
 // Past this multiple of the stage's typical duration the readout says so, rather than
 // leaving the user to wonder whether the job is hung.
@@ -22,6 +22,7 @@ function Marker({ state }: { state: StageState }) {
       <span className="h-4 w-4 animate-spin rounded-full border-2 border-surface-overlay border-t-accent" />
     );
   }
+  if (state === "skipped") return <span className="h-0.5 w-3 rounded bg-fg-subtle" />;
   return <span className="h-3 w-3 rounded-full border-2 border-border" />;
 }
 
@@ -56,7 +57,7 @@ export function StageRow({
           <span
             className={cn(
               "text-sm",
-              state === "pending" ? "text-fg-subtle" : "text-fg",
+              state === "pending" || state === "skipped" ? "text-fg-subtle" : "text-fg",
               state === "active" && "font-medium",
             )}
           >
@@ -68,18 +69,27 @@ export function StageRow({
               slow ? "text-warning" : "text-fg-subtle",
             )}
           >
-            {state === "pending"
-              ? `~${spec.typicalS}s`
-              : elapsedS === null
-                ? ""
-                : formatDuration(elapsedS)}
+            {state === "skipped"
+              ? detail?.edited
+                ? "your edits"
+                : "unchanged"
+              : state === "pending"
+                ? `~${spec.typicalS}s`
+                : elapsedS === null
+                  ? ""
+                  : formatDuration(elapsedS)}
             {slow && " - taking longer than usual"}
           </span>
         </div>
 
         {state === "active" && <p className="mt-0.5 text-xs text-fg-muted">{spec.explainer}</p>}
         {line && (
-          <p className={cn("mt-0.5 text-xs", state === "done" ? "text-fg-muted" : "text-fg")}>
+          <p
+            className={cn(
+              "mt-0.5 text-xs",
+              state === "done" || state === "skipped" ? "text-fg-muted" : "text-fg",
+            )}
+          >
             {line}
           </p>
         )}

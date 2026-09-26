@@ -1,10 +1,12 @@
 // Planning screen: follows an async planning job's SSE progress (world -> script ->
 // breakdown -> prompts -> assemble). At every moment it answers three questions - what is
 // happening now, how long it has been happening, and what it has produced so far. On
-// `succeeded` it dwells briefly on the result, then routes to the checkpoint.
+// `succeeded` it dwells briefly on the result, then routes to the checkpoint. A revision job
+// runs on the same screen, with the stages the user's own edits produced shown as skipped.
 
 import { useEffect } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
+import { useQueryClient } from "@tanstack/react-query";
 import { ApiError, type PlanningEvent } from "@/api/client";
 import { usePlanningStream } from "@/hooks/usePlanningStream";
 import { useNavigateOnce } from "@/hooks/useNavigateOnce";
@@ -13,8 +15,6 @@ import { formatDuration } from "@/lib/format";
 import { Button, Card, ErrorBanner, ProgressBar, Spinner, SuccessBanner } from "@/components/ui";
 import { StageRow, type StageState } from "@/components/planning/StageRow";
 import { STAGES, detailFraction, renderDetail } from "@/components/planning/stages";
-
-const TOTAL_WEIGHT = STAGES.reduce((sum, stage) => sum + stage.typicalS, 0);
 
 /** An active stage with no `done / total` of its own asymptotes toward its own boundary
  *  rather than ever implying it has finished. */
@@ -26,18 +26,24 @@ function activeFraction(event: PlanningEvent, stageElapsedS: number, typicalS: n
 
 function overallFraction(event: PlanningEvent, activeIdx: number, stageElapsedS: number): number {
   if (event.status === "succeeded") return 1;
+  const skipped = new Set(event.skipped ?? []);
+  const totalWeight = STAGES.filter((stage) => !skipped.has(stage.key)).reduce(
+    (sum, stage) => sum + stage.typicalS,
+    0,
+  );
   let weight = 0;
   STAGES.forEach((stage, idx) => {
-    if (idx < activeIdx) weight += stage.typicalS;
+    if (idx < activeIdx && !skipped.has(stage.key)) weight += stage.typicalS;
   });
   const active = STAGES[activeIdx];
   if (active && event.status !== "failed") {
     weight += active.typicalS * activeFraction(event, stageElapsedS, active.typicalS);
   }
-  return Math.min(0.99, weight / TOTAL_WEIGHT);
+  return Math.min(0.99, weight / totalWeight);
 }
 
 function stageState(event: PlanningEvent, idx: number, activeIdx: number): StageState {
+  if (event.skipped?.includes(STAGES[idx].key)) return "skipped";
   if (event.status === "succeeded") return "done";
   if (idx < activeIdx) return "done";
   // A failed job leaves its stage named but no longer running, so nothing spins.
@@ -49,6 +55,8 @@ export default function Planning() {
   const { jobId = "" } = useParams();
   const { event, receivedAt, connection } = usePlanningStream(jobId);
   const navigateOnce = useNavigateOnce();
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const now = useNow();
 
   // `queued` has no stage yet; treat it as the first stage already underway rather than
@@ -63,12 +71,29 @@ export default function Planning() {
 
   const succeeded = event?.status === "succeeded";
   const projectId = event?.project_id ?? "";
+  const revision = event?.kind === "revision";
+  const skipped = new Set(event?.skipped ?? []);
+  const runStages = STAGES.filter((stage) => !skipped.has(stage.key));
+  const runPosition = Math.max(
+    1,
+    runStages.findIndex((stage) => stage.key === STAGES[activeIdx]?.key) + 1,
+  );
+  const title = !revision
+    ? "Planning your film"
+    : event?.mode === "in_place"
+      ? "Updating the draft"
+      : "Building your revision";
 
   useEffect(() => {
     if (!succeeded || !projectId) return;
+    // An in-place revision keeps the project id, and the checkpoint pins its package query,
+    // so drop every cached view of it before anything can render the old draft.
+    for (const key of ["package", "packageStatus", "reuse", "story", "versions"]) {
+      queryClient.removeQueries({ queryKey: [key, projectId] });
+    }
     const timer = setTimeout(() => navigateOnce(`/checkpoint/${projectId}`), 1200);
     return () => clearTimeout(timer);
-  }, [succeeded, projectId, navigateOnce]);
+  }, [succeeded, projectId, navigateOnce, queryClient]);
 
   // A backgrounded tab still shows how far along the job is.
   useEffect(() => {
@@ -77,11 +102,11 @@ export default function Planning() {
     document.title =
       event.status === "failed"
         ? "Planning failed - AI Film Pipeline"
-        : `Planning (${Math.min(activeIdx + 1, STAGES.length)}/${STAGES.length}) - AI Film Pipeline`;
+        : `Planning (${runPosition}/${runStages.length}) - AI Film Pipeline`;
     return () => {
       document.title = previous;
     };
-  }, [event, activeIdx]);
+  }, [event, runPosition, runStages.length]);
 
   if (!event) return <Spinner label="Connecting to the planning job..." />;
 
@@ -101,7 +126,11 @@ export default function Planning() {
               state={state}
               detail={event.details[spec.key]}
               elapsedS={
-                state === "active" ? stageElapsedS : (event.stage_timings[spec.key] ?? null)
+                state === "active"
+                  ? stageElapsedS
+                  : state === "skipped"
+                    ? null
+                    : (event.stage_timings[spec.key] ?? null)
               }
             />
           );
@@ -113,7 +142,9 @@ export default function Planning() {
   if (failed) {
     return (
       <div className="mx-auto max-w-2xl">
-        <h1 className="text-2xl font-semibold">Planning failed</h1>
+        <h1 className="text-2xl font-semibold">
+          {revision ? "The revision failed" : "Planning failed"}
+        </h1>
         <div className="mt-6 space-y-4">
           <ErrorBanner
             title={
@@ -124,9 +155,15 @@ export default function Planning() {
             // ApiError's 422 shape is how `errorToMessages` reaches its string-array path.
             error={new ApiError(422, event.errors ?? ["Planning failed"])}
           />
-          <Link to="/submit">
-            <Button variant="secondary">Back to submit</Button>
-          </Link>
+          {revision ? (
+            <Button variant="secondary" onClick={() => navigate(-1)}>
+              Back to the editor
+            </Button>
+          ) : (
+            <Link to="/submit">
+              <Button variant="secondary">Back to submit</Button>
+            </Link>
+          )}
         </div>
         {stageList}
         <p className="mt-4 font-mono text-xs text-fg-subtle">{event.job_id}</p>
@@ -138,17 +175,19 @@ export default function Planning() {
     <div className="mx-auto max-w-2xl">
       <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
         <div className="flex items-center gap-3">
-          <h1 className="text-2xl font-semibold">Planning your film</h1>
+          <h1 className="text-2xl font-semibold">{title}</h1>
           <span className="rounded-full border border-border-strong px-2 py-0.5 text-xs text-fg-muted">
-            Stage {Math.min(activeIdx + 1, STAGES.length)} of {STAGES.length}
+            Stage {runPosition} of {runStages.length}
           </span>
         </div>
         <p className="font-mono text-xs text-fg-subtle">{event.job_id}</p>
       </div>
 
       <p className="mt-1 text-sm text-fg-muted">
-        Compiling the brief into a production package. You can leave this page - the job keeps
-        running and the finished package appears in History.
+        {revision
+          ? "Regenerating only what your edits affect; everything else carries over unchanged."
+          : "Compiling the brief into a production package."}{" "}
+        You can leave this page - the job keeps running and the finished package appears in History.
       </p>
 
       <div className="mt-6 flex items-center gap-3">
@@ -168,7 +207,7 @@ export default function Planning() {
       <p className="sr-only" aria-live="polite">
         {succeeded
           ? "Planning complete"
-          : `Stage ${activeIdx + 1} of ${STAGES.length}: ${STAGES[activeIdx]?.label.toLowerCase()}`}
+          : `Stage ${runPosition} of ${runStages.length}: ${STAGES[activeIdx]?.label.toLowerCase()}`}
       </p>
 
       {stageList}

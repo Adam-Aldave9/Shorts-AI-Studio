@@ -364,6 +364,8 @@ def test_assemble_carries_the_narrative_forward():
     assert [s.scene_id for s in narrative.shots] == ["scene_01", "scene_01", "scene_02"]
     assert [s.shot_type for s in narrative.shots] == ["aerial", "wide", "wide"]
     assert narrative.shots[1].action == "Jaguar drinks at the bank"
+    assert narrative.shots[1].location_id == "loc_river"
+    assert narrative.shots[1].subject_ids == ["char_jaguar"]
 
     # The flattened voiceover blob is still the join of the per-scene narration.
     joined = " ".join(s.narration for s in narrative.scenes)
@@ -466,6 +468,10 @@ def test_create_brief_accepts_job_and_persists_on_success(monkeypatch):
             stored = await state.get_package(project_id)
             assert stored is not None
             assert await state.get_project_owner(project_id) == "user_a"
+            assert stored.lineage is not None
+            assert stored.lineage.film_id == project_id
+            assert stored.lineage.version == 1
+            assert stored.schema_version == "1.2"
             approved = [p.project_id async for p in state.iter_approved_packages()]
             assert approved == []
         finally:

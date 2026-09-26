@@ -12,17 +12,28 @@ import asyncio
 import contextlib
 import json
 import logging
+import re
 from datetime import datetime
 
 from auth import auth_router, current_user_id, install_auth, owned_package
 from auth.config import AUTH_ALLOWED_ORIGINS
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
-from schema import PROMPT_MAX_BYTES, Asset, AssetType, NodeStatus, ProductionPackage
+from schema import (
+    PROMPT_MAX_BYTES,
+    Asset,
+    AssetType,
+    NodeStatus,
+    ProductionPackage,
+    film_id_of,
+    version_of,
+)
 from sse_starlette.sse import EventSourceResponse
 from validator import content_errors, validate_package
 
+from scheduler import reuse
 from scheduler.daemon import run_daemon
 from scheduler.dag import FAILED_STATUSES, Dag
 from scheduler.state import (
@@ -32,11 +43,13 @@ from scheduler.state import (
     PHASE_EXECUTING,
     PHASE_PAUSED,
     EditConflict,
-    approve_package,
+    approve_and_seed,
     get_cost,
     get_final_url,
     get_node,
     get_package,
+    get_package_raw,
+    get_project_owner,
     get_project_phase,
     is_package_approved,
     iter_user_packages,
@@ -98,6 +111,49 @@ class PackageSummary(BaseModel):
     created_at: datetime
     phase: str | None
     cost_usd: float
+    film_id: str
+    version: int
+    parent_project_id: str | None
+
+
+class ApproveRequest(BaseModel):
+    rerender: list[str] = []  # reused nodes to render afresh anyway
+
+
+class ApproveResult(BaseModel):
+    status: str
+    reused: int
+
+
+class ReusedNode(BaseModel):
+    source_project_id: str
+    source_node_id: str
+    source_version: int
+
+
+class ReusePlan(BaseModel):
+    """Which nodes reuse an earlier version's render. ``final`` once approved, when it is
+    read from the seeded node hashes rather than predicted."""
+
+    final: bool
+    nodes: dict[str, ReusedNode]  # a node absent from this map renders
+    render_cost_usd: float
+    full_cost_usd: float
+
+
+class VersionSummary(BaseModel):
+    project_id: str
+    version: int
+    title: str
+    created_at: datetime
+    approved: bool
+    phase: str | None
+    cost_usd: float
+    parent_project_id: str | None
+    note: str
+    from_stage: str | None
+    changes: list[str]
+    has_final_cut: bool
 
 
 @app.get("/health")
@@ -116,7 +172,11 @@ async def create_package(
     same way), so this does not re-run the validator; checkpoint edits via ``PUT``
     do. Persisting it stamps the caller as owner and makes it visible to the daemon
     once ``/approve`` adds it to the approved set.
+
+    An import starts its own film: lineage is server-owned, and dropping it keeps
+    re-submitted packages (harness ``submit``/``bench``) out of any reuse.
     """
+    package.lineage = None
     await save_package(package, owner_id=user_id)
     return {"project_id": package.project_id}
 
@@ -136,6 +196,9 @@ async def list_packages(user_id: str = Depends(current_user_id)) -> list[Package
             created_at=pkg.created_at,
             phase=await get_project_phase(pkg.project_id),
             cost_usd=await get_cost(pkg.project_id),
+            film_id=film_id_of(pkg),
+            version=version_of(pkg),
+            parent_project_id=pkg.lineage.parent_project_id if pkg.lineage else None,
         )
         async for pkg in iter_user_packages(user_id)
     ]
@@ -180,6 +243,8 @@ async def update_package(project_id: str, package: ProductionPackage) -> Product
     # ``owned_package`` authorized — reject it rather than write cross-project.
     if package.project_id != project_id:
         raise HTTPException(422, "project_id in body must match URL")
+    stored = await get_package(project_id)
+    package.lineage = stored.lineage if stored else None
     report = validate_package(package)
     if not report.ok:
         raise HTTPException(422, detail=report.errors)
@@ -187,22 +252,160 @@ async def update_package(project_id: str, package: ProductionPackage) -> Product
     return package
 
 
-@app.post("/packages/{project_id}/approve", dependencies=[Depends(owned_package)])
-async def approve(project_id: str) -> dict[str, str]:
+@app.post(
+    "/packages/{project_id}/approve",
+    response_model=ApproveResult,
+    dependencies=[Depends(owned_package)],
+)
+async def approve(project_id: str, body: ApproveRequest | None = None) -> ApproveResult:
+    """Lock the package and hand it to the daemon. In the same transaction, nodes whose
+    render already exists in another version of the film are seeded as succeeded, and
+    ``rerender`` nodes get a fresh take so they render regardless."""
     # Approving is the point of no return for edits, so a second approve is a
     # conflict (409), not a silent idempotent no-op — the caller's UI must learn the
     # run is already locked.
     if await is_package_approved(project_id):
         raise HTTPException(409, "Package is already approved.")
-    package = await get_package(project_id)
-    if package is None:
+    raw = await get_package_raw(project_id)
+    if raw is None:
         raise HTTPException(404, "package not found")
+    package = ProductionPackage.model_validate_json(raw)
     report = validate_package(package)
     if not report.ok:
         raise HTTPException(422, detail=report.errors)
-    if not await approve_package(project_id):
+    rerender = body.rerender if body is not None else []
+    unknown = [n for n in rerender if package.asset_by_id(n) is None]
+    if unknown:
+        raise HTTPException(422, f"unknown node(s): {', '.join(unknown)}")
+    owner = await get_project_owner(project_id)
+    try:
+        seeds = await approve_and_seed(
+            project_id, expected_raw=raw, rerender=rerender, seed=reuse.seeder(owner)
+        )
+    except EditConflict:
+        raise HTTPException(409, "The package changed while approving; review it and approve again.")
+    except KeyError:
         raise HTTPException(404, "package not found")
-    return {"status": "approved"}
+    return ApproveResult(status="approved", reused=len(seeds))
+
+
+@app.get(
+    "/packages/{project_id}/reuse",
+    response_model=ReusePlan,
+    dependencies=[Depends(owned_package)],
+)
+async def reuse_plan(project_id: str) -> ReusePlan:
+    package = await get_package(project_id)
+    if package is None:
+        raise HTTPException(404, "package not found")
+    nodes: dict[str, ReusedNode] = {}
+    final = await is_package_approved(project_id)
+    if final:
+        versions: dict[str, int] = {}
+        for asset in package.assets:
+            reused_from = (await get_node(project_id, asset.node_id)).get("reused_from")
+            if not reused_from:
+                continue
+            source_pid, _, source_nid = reused_from.partition("/")
+            if source_pid not in versions:
+                source = await get_package(source_pid)
+                versions[source_pid] = version_of(source) if source else 0
+            nodes[asset.node_id] = ReusedNode(
+                source_project_id=source_pid,
+                source_node_id=source_nid,
+                source_version=versions[source_pid],
+            )
+    else:
+        owner = await get_project_owner(project_id)
+        matched = reuse.match(package, await reuse.reuse_sources(package, owner))
+        nodes = {
+            node_id: ReusedNode(
+                source_project_id=src.project_id,
+                source_node_id=src.node_id,
+                source_version=src.version,
+            )
+            for node_id, src in matched.items()
+        }
+    full = sum(a.estimated_cost_usd for a in package.assets)
+    render = sum(a.estimated_cost_usd for a in package.assets if a.node_id not in nodes)
+    return ReusePlan(
+        final=final,
+        nodes=nodes,
+        render_cost_usd=round(render, 2),
+        full_cost_usd=round(full, 2),
+    )
+
+
+async def _version_summary(pkg: ProductionPackage) -> VersionSummary:
+    lineage = pkg.lineage
+    return VersionSummary(
+        project_id=pkg.project_id,
+        version=version_of(pkg),
+        title=pkg.meta.title,
+        created_at=pkg.created_at,
+        approved=await is_package_approved(pkg.project_id),
+        phase=await get_project_phase(pkg.project_id),
+        cost_usd=await get_cost(pkg.project_id),
+        parent_project_id=lineage.parent_project_id if lineage else None,
+        note=lineage.note if lineage else "",
+        from_stage=lineage.from_stage if lineage else None,
+        changes=list(lineage.changes) if lineage else [],
+        has_final_cut=bool(await get_final_url(pkg.project_id)),
+    )
+
+
+@app.get(
+    "/packages/{project_id}/versions",
+    response_model=list[VersionSummary],
+    dependencies=[Depends(owned_package)],
+)
+async def list_versions(project_id: str) -> list[VersionSummary]:
+    """Every version of this package's film, oldest first."""
+    package = await get_package(project_id)
+    if package is None:
+        raise HTTPException(404, "package not found")
+    film_id = film_id_of(package)
+    owner = await get_project_owner(project_id)
+    if owner is None:
+        members = [package]
+    else:
+        members = [p async for p in iter_user_packages(owner) if film_id_of(p) == film_id]
+    summaries = [await _version_summary(p) for p in members]
+    summaries.sort(key=lambda s: (s.version, s.created_at))
+    return summaries
+
+
+_media_client = None
+
+
+def _media():  # type: ignore[no-untyped-def]
+    """The object-storage client for signing playback URLs, built on first use so the
+    scheduler starts (and its tests run) without S3 configured."""
+    global _media_client
+    if _media_client is None:
+        from storage import Storage
+
+        _media_client = Storage()
+    return _media_client
+
+
+def _download_name(package: ProductionPackage) -> str:
+    slug = re.sub(r"[^a-z0-9]+", "-", package.meta.title.lower()).strip("-") or "film"
+    return f"{slug}-v{version_of(package)}.mp4"
+
+
+@app.get("/packages/{project_id}/final", dependencies=[Depends(owned_package)])
+async def final_cut(project_id: str, download: int = 0) -> RedirectResponse:
+    """Redirect to a short-lived presigned URL of the final cut. The browser requests
+    this same-origin, so the session cookie authorizes it before it leaves for S3."""
+    final_url = await get_final_url(project_id)
+    if not final_url:
+        raise HTTPException(404, "This version has no final cut yet.")
+    name = None
+    if download:
+        package = await get_package(project_id)
+        name = _download_name(package) if package else "film.mp4"
+    return RedirectResponse(_media().presigned_get_url(final_url, download_name=name), status_code=307)
 
 
 class PackageStatus(BaseModel):
@@ -366,6 +569,7 @@ async def _status_event(project_id: str) -> dict | None:
             "error_code": live.get("error_code"),
             "error_detail": live.get("error_detail"),
             "blocked_by": blocked.get(asset.node_id, []),
+            "reused_from": live.get("reused_from"),
         }
     phase = await get_project_phase(project_id)
     return {

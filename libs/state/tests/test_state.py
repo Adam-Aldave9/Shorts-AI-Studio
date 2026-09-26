@@ -326,6 +326,9 @@ def test_plan_job_lifecycle_success():
         frame = await state.get_plan_job("j_x")
         assert frame == {
             "job_id": "j_x",
+            "kind": "brief",
+            "mode": None,
+            "skipped": [],
             "status": state.PLAN_QUEUED,
             "stage": None,
             "stage_index": -1,
@@ -399,5 +402,150 @@ def test_plan_job_failed_carries_errors():
 
         # owner check is scoped: a miss returns None (backs the 404 in owned_job)
         assert await state.get_plan_job_owner("nope") is None
+
+    _run(scenario)
+
+
+def test_plan_job_revision_fields_round_trip():
+    async def scenario():
+        await state.create_plan_job(
+            "j_r", owner_id="u", kind="revision", mode="in_place", skipped=["world", "script"]
+        )
+        frame = await state.get_plan_job("j_r")
+        assert frame["kind"] == "revision"
+        assert frame["mode"] == "in_place"
+        assert frame["skipped"] == ["world", "script"]
+
+        # A hash written before these fields existed still reads with defaults.
+        await state.store._redis().hset("planjob:j_old", mapping={"status": "queued", "owner": "u"})
+        old = await state.get_plan_job("j_old")
+        assert (old["kind"], old["mode"], old["skipped"]) == ("brief", None, [])
+
+    _run(scenario)
+
+
+# --------------------------------------------------------------------------
+# Atomic approve + reuse seeding
+# --------------------------------------------------------------------------
+def _seed_fields(url: str) -> dict[str, str]:
+    return {"status": "succeeded", "asset_url": url, "provider_url": url,
+            "actual_cost_usd": "0", "reused_from": "p_src/ref_a"}
+
+
+def test_get_package_raw_is_the_unhydrated_spec():
+    async def scenario():
+        assert await state.get_package_raw("p_test") is None
+        await state.save_package(_pkg())
+        await state.set_node_status("p_test", "ref_a", NodeStatus.SUCCEEDED, asset_url="s3://b/x")
+        raw = await state.get_package_raw("p_test")
+        assert ProductionPackage.model_validate_json(raw).asset_by_id("ref_a").status is NodeStatus.PENDING
+
+    _run(scenario)
+
+
+def test_approve_and_seed_writes_seeds_and_approval_together():
+    async def scenario():
+        await state.save_package(_pkg())
+        raw = await state.get_package_raw("p_test")
+
+        async def seed(spec):
+            return {"ref_a": _seed_fields("s3://film-assets/p_src/ref_a.png")}
+
+        seeds = await state.approve_and_seed("p_test", expected_raw=raw, seed=seed)
+        assert set(seeds) == {"ref_a"}
+        assert await state.is_package_approved("p_test")
+        got = await state.get_package("p_test")
+        assert got.asset_by_id("ref_a").status is NodeStatus.SUCCEEDED
+        assert got.asset_by_id("ref_a").asset_url == "s3://film-assets/p_src/ref_a.png"
+        assert (await state.get_node("p_test", "ref_a"))["reused_from"] == "p_src/ref_a"
+        assert got.asset_by_id("shot_a").status is NodeStatus.PENDING
+        # No takes changed, so the spec itself is untouched.
+        assert await state.get_package_raw("p_test") == raw
+
+    _run(scenario)
+
+
+def test_approve_and_seed_writes_takes_before_seeding():
+    async def scenario():
+        await state.save_package(_pkg())
+        raw = await state.get_package_raw("p_test")
+        seen: dict[str, str | None] = {}
+
+        async def seed(spec):
+            seen.update({a.node_id: a.take for a in spec.assets})
+            return {}
+
+        await state.approve_and_seed("p_test", expected_raw=raw, rerender=["shot_a"], seed=seed)
+        spec = ProductionPackage.model_validate_json(await state.get_package_raw("p_test"))
+        assert spec.asset_by_id("shot_a").take is not None
+        assert seen["shot_a"] == spec.asset_by_id("shot_a").take
+        assert spec.asset_by_id("ref_a").take is None
+        assert spec.asset_by_id("ref_a").prompt == "x"
+
+    _run(scenario)
+
+
+def test_approve_and_seed_conflicts_write_nothing():
+    async def scenario():
+        await state.save_package(_pkg())
+        raw = await state.get_package_raw("p_test")
+
+        async def seed(spec):
+            return {"ref_a": _seed_fields("s3://b/x")}
+
+        with pytest.raises(state.EditConflict):
+            await state.approve_and_seed("p_test", expected_raw=raw + " ", seed=seed)
+        assert not await state.is_package_approved("p_test")
+        assert await state.get_node("p_test", "ref_a") == {}
+
+        await state.approve_and_seed("p_test", expected_raw=raw)
+        with pytest.raises(state.EditConflict):
+            await state.approve_and_seed("p_test", expected_raw=raw, seed=seed)
+        assert await state.get_node("p_test", "ref_a") == {}
+
+        with pytest.raises(KeyError):
+            await state.approve_and_seed("p_ghost", expected_raw=raw)
+
+    _run(scenario)
+
+
+def test_approve_and_seed_retries_after_a_concurrent_write():
+    async def scenario():
+        await state.save_package(_pkg())
+        await state.save_package(_pkg().model_copy(update={"project_id": "p_other"}))
+        raw = await state.get_package_raw("p_test")
+        client = state.store._redis()
+        calls = 0
+
+        async def seed(spec):
+            nonlocal calls
+            calls += 1
+            # The seed callback's own reads run on another connection under the WATCH.
+            assert await state.get_package("p_other") is not None
+            if calls == 1:
+                await client.sadd("projects:approved", "p_other")
+            return {"ref_a": _seed_fields("s3://b/x")}
+
+        await state.approve_and_seed("p_test", expected_raw=raw, seed=seed)
+        assert calls == 2
+        assert await state.is_package_approved("p_test")
+        assert (await state.get_node("p_test", "ref_a"))["status"] == "succeeded"
+
+    _run(scenario)
+
+
+def test_replace_package_if_unapproved():
+    async def scenario():
+        await state.save_package(_pkg(), owner_id="u1")
+        draft = _pkg()
+        draft.asset_by_id("shot_a").prompt = "replanned"
+        assert await state.replace_package_if_unapproved(draft)
+        assert (await state.get_package("p_test")).asset_by_id("shot_a").prompt == "replanned"
+        assert await state.get_project_owner("p_test") == "u1"
+
+        await state.approve_package("p_test")
+        draft.asset_by_id("shot_a").prompt = "too late"
+        assert not await state.replace_package_if_unapproved(draft)
+        assert (await state.get_package("p_test")).asset_by_id("shot_a").prompt == "replanned"
 
     _run(scenario)

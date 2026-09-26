@@ -8,10 +8,14 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { approvePackage, isConflict, updatePackage, type ProductionPackage } from "@/api/client";
 import { usePackageDraft } from "@/hooks/usePackageDraft";
 import { usePromptLimits } from "@/hooks/usePromptLimits";
+import { useReusePlan } from "@/hooks/useReusePlan";
+import { useVersions } from "@/hooks/useVersions";
 import { videoShots } from "@/lib/package";
 import { utf8Bytes } from "@/lib/promptBudget";
+import { isReused, nodeReuse, renderCostUsd } from "@/lib/reuse";
 import { Button, ErrorBanner, SuccessBanner, Tabs, WarningBanner } from "@/components/ui";
 import { CheckpointHeader } from "./CheckpointHeader";
+import { RevisionBanner } from "./RevisionBanner";
 import { StoryPanel } from "./StoryPanel";
 import { ShotWorkbench } from "./ShotWorkbench";
 import { JsonPanel } from "./JsonPanel";
@@ -39,11 +43,41 @@ export default function CheckpointEditor({
   const [tab, setTab] = useState<CheckpointTab>("story");
   const [jsonText, setJsonText] = useState(() => JSON.stringify(pkg, null, 2));
   const [parseError, setParseError] = useState<string | null>(null);
+  // Reused nodes the user wants rendered afresh anyway; sent with approve.
+  const [rerender, setRerender] = useState<ReadonlySet<string>>(new Set());
   // Approve navigates on its own once the save has landed; the nav guard must not block it.
   const approvingRef = useRef(false);
 
+  const lineage = pkg.lineage ?? null;
+  const isRevision = Boolean(lineage?.parent_project_id);
+  const reuseQuery = useReusePlan(projectId, isRevision);
+  const versionsQuery = useVersions(isRevision ? projectId : "");
+  const reuse = nodeReuse(
+    draftApi.merged.assets ?? [],
+    reuseQuery.data,
+    rerender,
+    draftApi.isNodeDirty,
+  );
+  const renderCost = reuseQuery.data ? renderCostUsd(draftApi.merged.assets ?? [], reuse) : null;
+  const reusedCount = reuseQuery.data
+    ? [...reuse.values()].filter((entry) => isReused(entry)).length
+    : null;
+
+  const toggleRerender = useCallback((nodeId: string) => {
+    setRerender((prev) => {
+      const next = new Set(prev);
+      if (next.has(nodeId)) next.delete(nodeId);
+      else next.add(nodeId);
+      return next;
+    });
+  }, []);
+
   const approveMutation = useMutation({
-    mutationFn: () => approvePackage(projectId),
+    mutationFn: () =>
+      approvePackage(
+        projectId,
+        [...rerender].filter((nodeId) => reuse.has(nodeId)),
+      ),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["packageStatus", projectId] });
       navigate(`/status/${projectId}`);
@@ -62,6 +96,7 @@ export default function CheckpointEditor({
       // The identity change re-seeds the draft hook; Monaco's text is not, so rewrite it.
       queryClient.setQueryData(["package", projectId], saved);
       setJsonText(JSON.stringify(saved, null, 2));
+      queryClient.invalidateQueries({ queryKey: ["reuse", projectId] });
     },
     onError: (error) => {
       if (isConflict(error)) {
@@ -192,6 +227,9 @@ export default function CheckpointEditor({
           onApprove={onApprove}
           onRevert={draftApi.resetAll}
           onLeave={() => navigate("/history")}
+          onEditStory={() => navigate(`/revise/${projectId}`)}
+          version={lineage?.version ?? 1}
+          renderCostUsd={renderCost}
         />
         <Tabs
           className="mt-3 max-w-md"
@@ -206,6 +244,15 @@ export default function CheckpointEditor({
       </div>
 
       <div className="mt-4 space-y-2 empty:hidden">
+        {lineage?.parent_project_id && (
+          <RevisionBanner
+            lineage={lineage}
+            versions={versionsQuery.data ?? []}
+            reusedCount={reusedCount}
+            totalAssets={pkg.assets?.length ?? 0}
+            renderCostUsd={renderCost}
+          />
+        )}
         {approved && phase === "blocked" && (
           <WarningBanner>
             This run needs your input - fix the failed shots on the{" "}
@@ -227,7 +274,14 @@ export default function CheckpointEditor({
             >
               Open the live status
             </button>
-            .
+            , or{" "}
+            <button
+              className="underline hover:text-warning/80"
+              onClick={() => navigate(`/revise/${projectId}`)}
+            >
+              revise the story
+            </button>{" "}
+            into a new version.
           </WarningBanner>
         )}
         {!approved && overLimit.length > 0 && (
@@ -270,6 +324,8 @@ export default function CheckpointEditor({
             setMeta={draftApi.setMeta}
             setNode={draftApi.setNode}
             readOnly={readOnly}
+            reuse={reuse}
+            onToggleRerender={toggleRerender}
           />
         )}
         {tab === "shots" && (
@@ -280,6 +336,8 @@ export default function CheckpointEditor({
             isNodeDirty={draftApi.isNodeDirty}
             resetNode={draftApi.resetNode}
             readOnly={readOnly}
+            reuse={reuse}
+            onToggleRerender={toggleRerender}
           />
         )}
         {tab === "json" && (

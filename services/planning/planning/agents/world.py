@@ -25,6 +25,7 @@ from __future__ import annotations
 from schema import World
 
 from planning.llm import MODEL_WORLD, Messages, call_structured
+from planning.models import WorldRevision
 
 _DEFAULT_STYLE = "flat 2D animation, warm earth tones"
 
@@ -75,3 +76,65 @@ def run(brief: dict, *, call=call_structured) -> World:
     messages = build_prompt(brief)
     raw = call(model=MODEL_WORLD, messages=messages, schema=World, temperature=0.9)
     return parse(raw)
+
+
+REVISE_SYSTEM = (
+    "You are the world-building agent in an automated film pipeline, revising an existing cast "
+    "and set. You receive the current characters and locations, the film's premise and style, "
+    "and the director's notes. Change only what the notes ask for. Keep every id you keep "
+    "exactly as given, and keep a kept entity's canonical_description word for word unless the "
+    "notes ask to change it. New characters use `char_*` ids and new locations `loc_*` ids. "
+    "Keep each canonical_description under 500 characters: lead with identity-defining visual "
+    "traits (age, build, face, hair, clothing, signature props) and end with one short sentence "
+    "stating the visual style, worded identically for every entity. Do not remove these "
+    "locations, because shots use them: {used_locations}. Return the complete world and one "
+    "sentence on what you changed."
+)
+
+
+def _entity_lines(world: World) -> str:
+    chars = "\n".join(
+        f"  - {c.id} ({c.name}): {c.canonical_description}" for c in world.characters
+    ) or "  (none)"
+    locs = "\n".join(
+        f"  - {l.id} ({l.name}): {l.canonical_description}" for l in world.locations
+    ) or "  (none)"
+    return f"Characters:\n{chars}\nLocations:\n{locs}"
+
+
+def build_revise_prompt(
+    brief: dict, world: World, notes: str, targets: list[str], used_locations: list[str]
+) -> Messages:
+    """Pure: current world + director's notes -> chat messages."""
+    style = brief.get("style") or _DEFAULT_STYLE
+    system = REVISE_SYSTEM.format(used_locations=", ".join(used_locations) or "(none)")
+    human = (
+        f"Premise:\n{brief['premise']}\n\n"
+        f"Visual style: {style}.\n\n"
+        f"Current world:\n{_entity_lines(world)}\n\n"
+        f"Director's notes:\n{notes.strip() or '(none: improve it as you see fit)'}\n"
+    )
+    if targets:
+        human += (
+            f"\nRewrite only these entities: {', '.join(targets)}. Return just those entities, "
+            "with the same ids."
+        )
+    return [("system", system), ("human", human)]
+
+
+def parse_revision(result: WorldRevision | dict) -> WorldRevision:
+    return result if isinstance(result, WorldRevision) else WorldRevision.model_validate(result)
+
+
+def revise(
+    brief: dict,
+    world: World,
+    notes: str,
+    targets: list[str],
+    used_locations: list[str],
+    *,
+    call=call_structured,
+) -> WorldRevision:
+    messages = build_revise_prompt(brief, world, notes, targets, used_locations)
+    raw = call(model=MODEL_WORLD, messages=messages, schema=WorldRevision, temperature=0.7)
+    return parse_revision(raw)

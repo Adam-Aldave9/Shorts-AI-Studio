@@ -10,6 +10,7 @@ from __future__ import annotations
 from schema import (
     Asset,
     AssetType,
+    Lineage,
     Meta,
     Narrative,
     NarrativeScene,
@@ -187,3 +188,11 @@ def test_unknown_hint_and_promptless_asset_pass():
     assert validate_package(_with_shot_prompt("a" * 5000, hint="fal:other-model")).ok
     assert validate_package(_with_shot_prompt(None)).ok
     assert content_errors(_with_shot_prompt(None).asset_by_id("shot_a")) == []
+
+
+def test_schema_1_2_package_passes():
+    pkg = _valid_pkg()
+    pkg.schema_version = "1.2"
+    pkg.lineage = Lineage(film_id="p_root", version=2, parent_project_id="p_root")
+    pkg.asset_by_id("shot_a").take = "t1"
+    assert validate_package(pkg).ok

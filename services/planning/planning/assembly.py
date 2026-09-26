@@ -79,6 +79,10 @@ def _ref_prompt(entity: Character | Location, style: str) -> str:
     return f"Establishing background, {style}: {entity.canonical_description}"
 
 
+def ref_node_id(entity: Character | Location) -> str:
+    return entity.reference_image_ids[0] if entity.reference_image_ids else f"ref_{entity.id}"
+
+
 def _build_ref_nodes(world: World, style: str) -> tuple[list[Asset], dict[str, str]]:
     """One image node per world entity. Returns the nodes and an
     ``entity_id -> ref_node_id`` map for resolving shot references."""
@@ -86,7 +90,7 @@ def _build_ref_nodes(world: World, style: str) -> tuple[list[Asset], dict[str, s
     entity_ref: dict[str, str] = {}
     seen: set[str] = set()
     for entity in (*world.characters, *world.locations):
-        ref_id = entity.reference_image_ids[0] if entity.reference_image_ids else f"ref_{entity.id}"
+        ref_id = ref_node_id(entity)
         entity_ref[entity.id] = ref_id
         if ref_id in seen:
             continue
@@ -192,6 +196,8 @@ def assemble_package(
                 scene_id=shot.scene_id,
                 shot_type=shot.shot_type,
                 action=shot.action,
+                location_id=shot.location_id,
+                subject_ids=list(shot.subject_ids),
             )
         )
         prev_id, prev_loc = node_id, shot.location_id

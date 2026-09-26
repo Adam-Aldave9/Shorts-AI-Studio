@@ -21,6 +21,18 @@ export type ErrorCode = PlanningComponents["schemas"]["ErrorCode"];
 export type NodeEdit = SchedulerComponents["schemas"]["NodeEdit"];
 type ProviderLimits = SchedulerComponents["schemas"]["ProviderLimits"];
 type PromptSuggestion = PlanningComponents["schemas"]["PromptSuggestion"];
+export type Story = PlanningComponents["schemas"]["Story"];
+export type StoryResponse = PlanningComponents["schemas"]["StoryResponse"];
+export type RevisionRequest = PlanningComponents["schemas"]["RevisionRequest"];
+export type RevisionPreview = PlanningComponents["schemas"]["RevisionPreview"];
+export type ProposalRequest = PlanningComponents["schemas"]["ProposalRequest"];
+export type Scene = PlanningComponents["schemas"]["Scene"];
+export type Shot = PlanningComponents["schemas"]["Shot"];
+export type Character = PlanningComponents["schemas"]["Character"];
+export type Lineage = SchedulerComponents["schemas"]["Lineage"];
+export type ReusePlan = SchedulerComponents["schemas"]["ReusePlan"];
+export type VersionSummary = SchedulerComponents["schemas"]["VersionSummary"];
+type ApproveResult = SchedulerComponents["schemas"]["ApproveResult"];
 
 /** A non-2xx response. For the scheduler's 422, `detail` is the validator's error list,
  *  rendered inline at the checkpoint. */
@@ -65,6 +77,7 @@ function readCookie(name: string): string | null {
 const CSRF_COOKIE = "afp_csrf";
 const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
 
+// `init.signal` passes straight through to fetch, so callers can abort a stale request.
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
   const method = (init?.method ?? "GET").toUpperCase();
   const headers: Record<string, string> = {
@@ -154,10 +167,29 @@ export function updatePackage(
   });
 }
 
-export function approvePackage(projectId: string): Promise<{ status: string }> {
-  return request<{ status: string }>(`${SCHEDULER_URL}/packages/${projectId}/approve`, {
+/** Approve and hand off to execution. Nodes whose render already exists in another version
+ *  of the film are reused unless listed in `rerender`. */
+export function approvePackage(projectId: string, rerender: string[] = []): Promise<ApproveResult> {
+  return request<ApproveResult>(`${SCHEDULER_URL}/packages/${projectId}/approve`, {
     method: "POST",
+    body: JSON.stringify({ rerender }),
   });
+}
+
+/** Which nodes reuse an earlier version's render (predicted before approval, final after). */
+export function getReusePlan(projectId: string): Promise<ReusePlan> {
+  return request<ReusePlan>(`${SCHEDULER_URL}/packages/${projectId}/reuse`);
+}
+
+/** Every version of this package's film, oldest first. */
+export function listVersions(projectId: string): Promise<VersionSummary[]> {
+  return request<VersionSummary[]>(`${SCHEDULER_URL}/packages/${projectId}/versions`);
+}
+
+/** Same-origin URL of the final cut. The scheduler checks the session, then redirects to a
+ *  short-lived presigned object URL, so it works directly as a `<video src>` or link. */
+export function finalCutUrl(projectId: string, download = false): string {
+  return `${SCHEDULER_URL}/packages/${projectId}/final${download ? "?download=1" : ""}`;
 }
 
 /** Editability of a package. `approved` is the authoritative edit lock: once true the run
@@ -185,6 +217,49 @@ export function retryNodes(projectId: string, nodeIds?: string[]): Promise<Packa
   return request<PackageStatus>(`${SCHEDULER_URL}/packages/${projectId}/retry`, {
     method: "POST",
     body: JSON.stringify({ node_ids: nodeIds ?? null }),
+  });
+}
+
+/** The editable planning stages of a version, pre-filled with its real content. */
+export function getStory(projectId: string): Promise<StoryResponse> {
+  return request<StoryResponse>(`${PLANNING_URL}/packages/${projectId}/story`);
+}
+
+/** What a revision with this story would change and regenerate. No LLM; fast. */
+export function previewRevision(
+  projectId: string,
+  body: RevisionRequest,
+  signal?: AbortSignal,
+): Promise<RevisionPreview> {
+  return request<RevisionPreview>(`${PLANNING_URL}/packages/${projectId}/story/preview`, {
+    method: "POST",
+    body: JSON.stringify(body),
+    signal,
+  });
+}
+
+/** An AI rewrite of one stage (or selected items) for review. Never saves. */
+export function proposeStory(
+  projectId: string,
+  body: ProposalRequest,
+): Promise<PlanningComponents["schemas"]["ProposalResponse"]> {
+  return request<PlanningComponents["schemas"]["ProposalResponse"]>(
+    `${PLANNING_URL}/packages/${projectId}/story/propose`,
+    {
+      method: "POST",
+      body: JSON.stringify(body),
+    },
+  );
+}
+
+/** Start the revision job (202). Follow it on the Planning screen like a brief. */
+export function createRevision(
+  projectId: string,
+  body: RevisionRequest,
+): Promise<PlanningJobAccepted> {
+  return request<PlanningJobAccepted>(`${PLANNING_URL}/packages/${projectId}/revisions`, {
+    method: "POST",
+    body: JSON.stringify(body),
   });
 }
 
@@ -233,6 +308,8 @@ export interface SseNode {
   error_detail: string | null;
   /** For a pending node: the failed nodes upstream of it. */
   blocked_by: string[];
+  /** `{project_id}/{node_id}` of the earlier version's render this node reuses. */
+  reused_from: string | null;
 }
 
 /** The `status` frame from `GET /packages/{id}/events` (scheduler `_status_event`). */
@@ -264,6 +341,10 @@ export interface PlanningStageDetail {
   cost_estimate_usd?: number;
   done?: number;
   total?: number;
+  /** A revision's skipped stage: whether the user's own edits produced its output. */
+  edited?: boolean;
+  /** Revision breakdown: how many scenes were re-planned. */
+  replanned?: number;
 }
 
 /** The `status` frame from `GET /jobs/{jobId}/events`. `stage` is the live chain step
@@ -272,6 +353,10 @@ export interface PlanningStageDetail {
  *  they are immune to clock skew between the browser and the container. */
 export interface PlanningEvent {
   job_id: string;
+  kind: "brief" | "revision";
+  mode: "new_version" | "in_place" | null;
+  /** Revision stages the user's edits already produced; they never run. */
+  skipped: string[];
   status: "queued" | "running" | "succeeded" | "failed";
   stage: string | null;
   stage_index: number;

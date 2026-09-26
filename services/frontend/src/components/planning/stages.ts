@@ -71,8 +71,12 @@ export function renderDetail(
       if (!detail.title) return null;
       return detail.scenes ? `"${detail.title}" - ${detail.scenes} scenes` : `"${detail.title}"`;
     }
-    case "breakdown":
-      return detail.shots ? `${detail.shots} shots` : null;
+    case "breakdown": {
+      if (!detail.shots) return null;
+      if (!detail.replanned) return `${detail.shots} shots`;
+      const scenes = detail.replanned === 1 ? "scene" : "scenes";
+      return `${detail.replanned} ${scenes} re-planned, ${detail.shots} shots`;
+    }
     case "prompts":
       return detail.total ? `${detail.done ?? 0} / ${detail.total} prompts written` : null;
     case "assemble": {

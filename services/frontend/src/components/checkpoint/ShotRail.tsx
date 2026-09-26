@@ -14,6 +14,7 @@ const ShotRow = memo(function ShotRow({
   selected,
   edited,
   overLimit,
+  reused,
   onSelect,
 }: {
   asset: Asset;
@@ -22,6 +23,7 @@ const ShotRow = memo(function ShotRow({
   selected: boolean;
   edited: boolean;
   overLimit: boolean;
+  reused: boolean;
   onSelect: (nodeId: string) => void;
 }) {
   return (
@@ -45,6 +47,11 @@ const ShotRow = memo(function ShotRow({
           {String(index + 1).padStart(2, "0")}
         </span>
         <span className="truncate font-mono text-xs text-fg-muted">{asset.node_id}</span>
+        {reused && (
+          <span className="rounded-full border border-accent/30 bg-accent/10 px-1.5 text-[10px] text-accent-soft">
+            reused
+          </span>
+        )}
         {(edited || overLimit) && (
           <span className="ml-auto flex shrink-0 items-center gap-1">
             {overLimit && (
@@ -78,6 +85,7 @@ export function ShotRail({
   valueOf,
   isEdited,
   isOverLimit,
+  isReused,
   onSelect,
   onMove,
 }: {
@@ -86,6 +94,7 @@ export function ShotRail({
   valueOf: (nodeId: string) => string;
   isEdited: (nodeId: string) => boolean;
   isOverLimit: (nodeId: string) => boolean;
+  isReused: (nodeId: string) => boolean;
   onSelect: (nodeId: string) => void;
   /** -1 / +1 from the arrow keys; the workbench owns the clamping. */
   onMove: (delta: number) => void;
@@ -127,6 +136,7 @@ export function ShotRail({
           selected={asset.node_id === selectedNodeId}
           edited={isEdited(asset.node_id)}
           overLimit={isOverLimit(asset.node_id)}
+          reused={isReused(asset.node_id)}
           onSelect={onSelect}
         />
       ))}
